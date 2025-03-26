@@ -18,6 +18,9 @@ setup(
     license="TODO: License declaration",
     tests_require=["pytest"],
     entry_points={
-        "console_scripts": ["move_arm = arm_control.move_arm:main"],
+        "console_scripts": [
+            "move_arm = arm_control.move_arm:main"
+            "tf_subscriber = arm_control.tf_subscriber:main"
+        ],
     },
 )
