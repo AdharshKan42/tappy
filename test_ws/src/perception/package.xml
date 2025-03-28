@@ -7,6 +7,14 @@
   <maintainer email="adharsh.kandula@gmail.com">rover</maintainer>
   <license>MIT</license>
 
+  <depend>rclpy</depend>
+  <depend>rosgraph_msgs</depend>
+  <depend>tf_transformations</depend>
+
+
+  <exec_depend>std_msgs</exec_depend>
+  <exec_depend>ros2launch</exec_depend>
+
   <test_depend>ament_copyright</test_depend>
   <test_depend>ament_flake8</test_depend>
   <test_depend>ament_pep257</test_depend>

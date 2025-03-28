@@ -1,6 +1,8 @@
 from setuptools import find_packages, setup
 
 package_name = 'perception'
+object_detection_root = "perception.detection"
+
 
 setup(
     name=package_name,
@@ -20,6 +22,9 @@ setup(
     tests_require=['pytest'],
     entry_points={
         'console_scripts': [
+            f"key_detector = {object_detection_root}.key_detector:main",
+
+
         ],
     },
 )
