@@ -13,12 +13,19 @@ setup(
             ['resource/' + package_name]),
         ('share/' + package_name, ['package.xml']),
     ],
-    install_requires=['setuptools'],
+    install_requires=[
+        'setuptools',
+        'numpy',
+        'scipy',
+        'opencv-python',
+        'paddleocr',
+        'typing-extensions',
+    ],
     zip_safe=True,
-    maintainer='rover',
+    maintainer='Tappy Team',
     maintainer_email='adharsh.kandula@gmail.com',
-    description='TODO: Package description',
-    license='TODO: License declaration',
+    description='Code for autonomous key detection and processing for Tappy',
+    license='MIT',
     tests_require=['pytest'],
     entry_points={
         'console_scripts': [

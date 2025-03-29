@@ -22,12 +22,6 @@ import logging
 from ppocr.utils.logging import get_logger
 import pdb
 
-logger = get_logger()
-logger.setLevel(logging.ERROR)
-
-# os.environ["PADDLEOCR_DEBUG"] = "0"  # Disable PaddleOCR debug messages
-# os.environ["PADDLE_LOG_LEVEL"] = "ERROR"  # Suppress PaddlePaddle logs
-
 @dataclass
 class Homography:
     fx: float
@@ -62,10 +56,8 @@ class ObjectTFPublisherNode(Node):
         # Annotated image publisher with detections
         self.image_publisher = self.create_publisher(Image, "perception/object_tf/image", 10)
 
-        # internal YOLO
+        # internal model
         self.bridge = CvBridge()
-        # package_dir = get_package_share_directory("perception")
-        # default_model_path = os.path.join(package_dir, "model", "weights", "best.pt")
         self.model = PaddleOCR(use_angle_cls=True, lang='en')
 
 
@@ -128,6 +120,8 @@ class ObjectTFPublisherNode(Node):
         rgb_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
 
         # Run OCR tracking on the frame
+
+        # Testing inference time for model
         start_time = self.get_clock().now()
         results = self.model.ocr(rgb_frame, cls=True)
         end_time = self.get_clock().now()
@@ -136,14 +130,14 @@ class ObjectTFPublisherNode(Node):
         self.get_logger().info(f"Elapsed time: {elapsed_time_seconds} seconds")
 
         self.get_logger().info(f"{results=}")
-        # Annotate the frame with the detection results
-        # self.get_logger().info(f"results: {results}")
-        result = results[0]  # Assuming you want to process the first result
+
+        # Process only the first result (change later for best detection)
+        result = results[0] 
         if result is None or len(result) == 0:
             self.get_logger().error("no detection in result")
             return
 
-            # [[[[451.0, 158.0], [636.0, 158.0], [636.0, 200.0], [451.0, 200.0]], ('contigo', 0.9973969459533691)]]
+        # [[[[451.0, 158.0], [636.0, 158.0], [636.0, 200.0], [451.0, 200.0]], ('contigo', 0.9973969459533691)]]
 
         # Iterate through the results and draw bounding boxes
         for line in result:
@@ -152,8 +146,7 @@ class ObjectTFPublisherNode(Node):
             text: str = line[1][0]
             confidence: float = line[1][1]
             bbox = line[0]  # Bounding box coordinates
-            # pdb.set_trace()
-            print(bbox)
+
             x_min, y_min = int(bbox[0][0]), int(bbox[0][1])
             x_max, y_max = int(bbox[2][0]), int(bbox[2][1])
 
@@ -161,14 +154,7 @@ class ObjectTFPublisherNode(Node):
             cv2.rectangle(rgb_frame, (x_min, y_min), (x_max, y_max), (0, 255, 0), 2)
             cv2.putText(rgb_frame, text, (x_min, y_min - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 0), 2)
 
-            # Compute the center and depth
-            # if len(detection.boxes.xyxy.tolist()) <= 0:
-            #     return
-
             x1, y1, x2, y2 = x_min, y_min, x_max, y_max
-            # class_id = int(detection.boxes.cls[0].item())  # Extract class ID
-            # class_name = self.model.names[class_id]  # Retrieve class name
-
             cx, cy = int((x1 + x2) // 2), int((y1 + y2) // 2)
 
             depth = self.calculate_depth(x1, y1, x2, y2)
@@ -184,20 +170,17 @@ class ObjectTFPublisherNode(Node):
 
             self.publish_tf_global(msg.header.frame_id, (X, Y, depth), text)
 
-        # cv2.imshow("OCR Result", rgb_frame)
-
-        # detection = results[0]
-        # annotated_frame = detection.plot()
+        # Publish the annotated image   
         annotated_frame_image = self.bridge.cv2_to_imgmsg(rgb_frame, encoding="rgb8")
         self.image_publisher.publish(annotated_frame_image)
 
     def publish_tf_global(
         self, parent_frame: str, object_pos: tuple[float, float, float], object_name: str
     ) -> None:
-        # Notation: Z is zed frame, O is object frame, I is utm frame.
+        # Notation: Z is realsense frame, O is object frame, I is utm frame.
 
         # 1. Get the transformation from Z to O (T_ZO)
-        # Listen from tf buffer the transform from utm to zed.
+        # Listen from tf buffer the transform from utm to realsense.
 
         # Change this to "rx200/base_link" if you want to use the base link of the robot as the static parent frame
         base_frame = "camera_link"
@@ -207,7 +190,7 @@ class ObjectTFPublisherNode(Node):
             self.get_logger().error(f"Could not transform rx200 baselink to Realsense: {ex}")
             return
 
-        # 2. Convert the transform message into an actual transformation matrix from utm to zed.
+        # 2. Convert the transform message into an actual transformation matrix from utm to realsense.
         T_IZ = np.eye(4, 4)
         T_IZ[0:3, 3] = np.array(
             [
@@ -225,9 +208,9 @@ class ObjectTFPublisherNode(Node):
         R_IZ = Rotation.from_quat(quaternion).as_matrix()
         T_IZ[0:3, 0:3] = R_IZ
 
-        # 3. compute TF from ZED to object
+        # 3. compute TF from realsense to object
         T_ZO = np.eye(4, 4)
-        T_ZO[0:3, 3] = np.array(object_pos)  # position in ZED frame
+        T_ZO[0:3, 3] = np.array(object_pos)  # position in realsense frame
 
         # 4. Compute the transform from utm to object
         T_IO = T_IZ @ T_ZO
@@ -253,6 +236,10 @@ class ObjectTFPublisherNode(Node):
 
 
 def main(args: Optional[list[str]] = None) -> None:
+    # Ignore paddleocr debug warnings
+    logger = get_logger()
+    logger.setLevel(logging.ERROR)
+
     rclpy.init(args=args)
     object_tf_node = ObjectTFPublisherNode()
     rclpy.spin(object_tf_node)
@@ -262,5 +249,3 @@ def main(args: Optional[list[str]] = None) -> None:
 
 if __name__ == "__main__":
     main()
-    cap.release()
-    cv2.destroyAllWindows()
