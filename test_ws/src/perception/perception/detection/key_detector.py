@@ -128,24 +128,24 @@ class ObjectTFPublisherNode(Node):
         rgb_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
 
         # Run OCR tracking on the frame
+        start_time = self.get_clock().now()
         results = self.model.ocr(rgb_frame, cls=True)
-
-        # Visualize the results of the frame
-        if len(results) <= 0:
-            self.get_logger().error("no detection")
-
-            return
+        end_time = self.get_clock().now()
+        elapsed_time = (end_time - start_time)
+        elapsed_time_seconds = elapsed_time.nanoseconds / 1e9
+        self.get_logger().info(f"Elapsed time: {elapsed_time_seconds} seconds")
 
         self.get_logger().info(f"{results=}")
         # Annotate the frame with the detection results
         # self.get_logger().info(f"results: {results}")
         result = results[0]  # Assuming you want to process the first result
-        if result is None:
+        if result is None or len(result) == 0:
             self.get_logger().error("no detection in result")
             return
 
             # [[[[451.0, 158.0], [636.0, 158.0], [636.0, 200.0], [451.0, 200.0]], ('contigo', 0.9973969459533691)]]
 
+        # Iterate through the results and draw bounding boxes
         for line in result:
             self.get_logger().info(f"line: {line}")
             
@@ -161,34 +161,35 @@ class ObjectTFPublisherNode(Node):
             cv2.rectangle(rgb_frame, (x_min, y_min), (x_max, y_max), (0, 255, 0), 2)
             cv2.putText(rgb_frame, text, (x_min, y_min - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 0), 2)
 
+            # Compute the center and depth
+            # if len(detection.boxes.xyxy.tolist()) <= 0:
+            #     return
+
+            x1, y1, x2, y2 = x_min, y_min, x_max, y_max
+            # class_id = int(detection.boxes.cls[0].item())  # Extract class ID
+            # class_name = self.model.names[class_id]  # Retrieve class name
+
+            cx, cy = int((x1 + x2) // 2), int((y1 + y2) // 2)
+
+            depth = self.calculate_depth(x1, y1, x2, y2)
+            if depth is None or np.isnan(depth):
+                self.get_logger().error("no depth")
+                return
+
+            if self.homography is None:
+                self.get_logger().error("no homography info")
+                return
+
+            X, Y = self.homography.convert_camera(cx, cy, depth)
+
+            self.publish_tf_global(msg.header.frame_id, (X, Y, depth), text)
+
         # cv2.imshow("OCR Result", rgb_frame)
 
         # detection = results[0]
         # annotated_frame = detection.plot()
         annotated_frame_image = self.bridge.cv2_to_imgmsg(rgb_frame, encoding="rgb8")
         self.image_publisher.publish(annotated_frame_image)
-
-        # # Compute the center and depth
-        # if len(detection.boxes.xyxy.tolist()) <= 0:
-        #     return
-        # x1, y1, x2, y2 = [int(p) for p in detection.boxes.xyxy.tolist()[0]]
-        # class_id = int(detection.boxes.cls[0].item())  # Extract class ID
-        # class_name = self.model.names[class_id]  # Retrieve class name
-
-        # cx, cy = int((x1 + x2) // 2), int((y1 + y2) // 2)
-
-        # depth = self.calculate_depth(x1, y1, x2, y2)
-        # if depth is None or np.isnan(depth):
-        #     self.get_logger().error("no depth")
-        #     return
-
-        # if self.homography is None:
-        #     self.get_logger().error("no homography info")
-        #     return
-
-        # X, Y = self.homography.convert_camera(cx, cy, depth)
-
-        # self.publish_tf_global(msg.header.frame_id, (X, Y, depth), class_name)
 
     def publish_tf_global(
         self, parent_frame: str, object_pos: tuple[float, float, float], object_name: str
@@ -197,10 +198,13 @@ class ObjectTFPublisherNode(Node):
 
         # 1. Get the transformation from Z to O (T_ZO)
         # Listen from tf buffer the transform from utm to zed.
+
+        # Change this to "rx200/base_link" if you want to use the base link of the robot as the static parent frame
+        base_frame = "camera_link"
         try:
-            T_IZ_msg = self.tf_buffer.lookup_transform("rx200/baselink", parent_frame, rclpy.time.Time())
+            T_IZ_msg = self.tf_buffer.lookup_transform(base_frame, parent_frame, rclpy.time.Time())
         except TransformException as ex:
-            self.get_logger().error(f"Could not transform baselink to Realsense: {ex}")
+            self.get_logger().error(f"Could not transform rx200 baselink to Realsense: {ex}")
             return
 
         # 2. Convert the transform message into an actual transformation matrix from utm to zed.
@@ -234,7 +238,7 @@ class ObjectTFPublisherNode(Node):
         # Convert the transformation matrix to message and publish.
         new_msg = TransformStamped()
         new_msg.header.stamp = self.get_clock().now().to_msg()
-        new_msg.header.frame_id = "baselink"
+        new_msg.header.frame_id = base_frame
         new_msg.child_frame_id = f"object_{object_name}"
         new_msg.transform.translation.x = t_vec[0]
         new_msg.transform.translation.y = t_vec[1]
