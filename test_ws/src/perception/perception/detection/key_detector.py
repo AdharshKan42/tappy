@@ -56,6 +56,10 @@ class ObjectTFPublisherNode(Node):
         # Annotated image publisher with detections
         self.image_publisher = self.create_publisher(Image, "perception/object_tf/image", 10)
 
+        # Model-specific parameters
+        package_dir = get_package_share_directory("perception")
+        self.valid_keys = self._read_in_keys_dict(os.path.join(package_dir, "model/keys_dict.txt"))
+
         # internal model
         self.bridge = CvBridge()
         self.model = PaddleOCR(use_angle_cls=True, lang='en')
@@ -68,7 +72,7 @@ class ObjectTFPublisherNode(Node):
 
         # Subscribe to realsense intrinsics to get the homography matrix
         self.create_subscription(
-            CameraInfo, "/camera/camera/depth/camera_info", self.camera_info_callback, 10
+            CameraInfo, "/camera/camera/aligned_depth_to_color/camera_info", self.camera_info_callback, 10
         )
         self.homography: Homography | None = None
 
@@ -96,7 +100,14 @@ class ObjectTFPublisherNode(Node):
         # self.get_logger().info(f"starting node with {self.conf_thres=} {self.iou_thres=}")
 
         self.get_logger().info(f"starting node")
-        
+
+    def _read_in_keys_dict(self, path: str) -> None:
+        """Reads in the keys dictionary from the given path and returns a list of keys."""
+        with open(path, "r") as f:
+            lines = f.readlines()
+            lines = [line.strip() for line in lines]
+            self.get_logger().info(f"read in keys dict: {lines}")
+            return lines
 
     def camera_info_callback(self, msg: CameraInfo) -> None:
         self.homography = Homography(fx=msg.k[0], fy=msg.k[4], cx=msg.k[2], cy=msg.k[5])
@@ -108,12 +119,14 @@ class ObjectTFPublisherNode(Node):
         roi = self.latest_depth_frame[y1:y2, x1:x2]
         valid_depths = roi[~np.isnan(roi)]  # Remove NaN values
 
-        return float(np.mean(valid_depths)) if valid_depths.size > 0 else None
+        # Convert from mm to meters
+        return float(np.mean(valid_depths))/1000.0 if valid_depths.size > 0 else None
 
     def depth_callback(self, msg: Image) -> None:
         self.latest_depth_frame = self.bridge.imgmsg_to_cv2(msg, desired_encoding="passthrough")
 
     def image_callback(self, msg: Image) -> None:
+        # self.get_logger().info("Received image")
         # Convert ROS Image message to OpenCV image
         frame = self.bridge.imgmsg_to_cv2(msg, desired_encoding="bgr8")
         
@@ -137,6 +150,12 @@ class ObjectTFPublisherNode(Node):
             self.get_logger().error("no detection in result")
             return
 
+        # Filter out results based on valid keys
+        result = [
+            [box, (text, confidence)]
+            for box, (text, confidence) in result
+            if text.upper() in self.valid_keys
+        ]
         # [[[[451.0, 158.0], [636.0, 158.0], [636.0, 200.0], [451.0, 200.0]], ('contigo', 0.9973969459533691)]]
 
         # Iterate through the results and draw bounding boxes
@@ -159,8 +178,8 @@ class ObjectTFPublisherNode(Node):
 
             depth = self.calculate_depth(x1, y1, x2, y2)
             if depth is None or np.isnan(depth):
-                self.get_logger().error("no depth")
-                return
+                self.get_logger().error(f"no depth for key at {x1, y1, x2, y2}")
+                continue
 
             if self.homography is None:
                 self.get_logger().error("no homography info")
@@ -168,7 +187,8 @@ class ObjectTFPublisherNode(Node):
 
             X, Y = self.homography.convert_camera(cx, cy, depth)
 
-            self.publish_tf_global(msg.header.frame_id, (X, Y, depth), text)
+            # msg.header.frame_id
+            self.publish_tf_global("camera_color_frame", (X, Y, depth), text)
 
         # Publish the annotated image   
         annotated_frame_image = self.bridge.cv2_to_imgmsg(rgb_frame, encoding="rgb8")
@@ -184,6 +204,7 @@ class ObjectTFPublisherNode(Node):
 
         # Change this to "rx200/base_link" if you want to use the base link of the robot as the static parent frame
         base_frame = "camera_link"
+        self.get_logger().info(f"par frame: {parent_frame}")
         try:
             T_IZ_msg = self.tf_buffer.lookup_transform(base_frame, parent_frame, rclpy.time.Time())
         except TransformException as ex:
@@ -217,15 +238,16 @@ class ObjectTFPublisherNode(Node):
         t_vec = T_IO[0:3, 3]
         quaternion = Rotation.from_matrix(T_IO[0:3, 0:3]).as_quat()
 
+        self.get_logger().info(f"object {object_name} at {t_vec}")
         # 5. broadcast the TF of the object
         # Convert the transformation matrix to message and publish.
         new_msg = TransformStamped()
         new_msg.header.stamp = self.get_clock().now().to_msg()
         new_msg.header.frame_id = base_frame
         new_msg.child_frame_id = f"object_{object_name}"
-        new_msg.transform.translation.x = t_vec[0]
-        new_msg.transform.translation.y = t_vec[1]
-        new_msg.transform.translation.z = t_vec[2]
+        new_msg.transform.translation.x = t_vec[2]
+        new_msg.transform.translation.y = -t_vec[0]
+        new_msg.transform.translation.z = -t_vec[1]
         new_msg.transform.rotation.x = quaternion[0]
         new_msg.transform.rotation.y = quaternion[1]
         new_msg.transform.rotation.z = quaternion[2]
