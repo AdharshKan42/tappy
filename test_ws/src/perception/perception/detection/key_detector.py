@@ -61,6 +61,8 @@ class ObjectTFPublisherNode(Node):
         self.bridge = CvBridge()
         self.model = PaddleOCR(use_angle_cls=True, lang='en')
 
+        self.conf_threshold = 0.7
+
 
         # TF magic
         self.tf_static_broadcaster = StaticTransformBroadcaster(self)
@@ -125,12 +127,13 @@ class ObjectTFPublisherNode(Node):
         result = [
             [box, (text, confidence)]
             for box, (text, confidence) in result
-            if text.upper() in self.valid_keys
+            if text.upper() in self.valid_keys and confidence > self.conf_threshold
         ]
         # [[[[451.0, 158.0], [636.0, 158.0], [636.0, 200.0], [451.0, 200.0]], ('contigo', 0.9973969459533691)]]
 
         # Iterate through the results and draw bounding boxes
         for line in result:            
+            self.get_logger().info(f"detected {line[1][0]} with confidence {line[1][1]}")
             text: str = line[1][0]
             confidence: float = line[1][1]
             bbox = line[0]  # Bounding box coordinates
