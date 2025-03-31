@@ -7,7 +7,6 @@ import rclpy
 from ament_index_python.packages import get_package_share_directory
 from cv_bridge import CvBridge
 from geometry_msgs.msg import TransformStamped
-from rcl_interfaces.msg import ParameterDescriptor, ParameterType
 from rclpy.node import Node
 from scipy.spatial.transform import Rotation
 from sensor_msgs.msg import CameraInfo, Image
@@ -20,7 +19,6 @@ import cv2
 import os
 import logging
 from ppocr.utils.logging import get_logger
-import pdb
 
 @dataclass
 class Homography:
@@ -76,29 +74,6 @@ class ObjectTFPublisherNode(Node):
         )
         self.homography: Homography | None = None
 
-        # # Object Detection Params
-        # self.declare_parameter(
-        #     name="conf_threshold",
-        #     descriptor=ParameterDescriptor(
-        #         type=ParameterType.PARAMETER_DOUBLE,
-        #         description="Obj detection model minimum confidence",
-        #     ),
-        #     value=0.2,
-        # )
-
-        # self.declare_parameter(
-        #     name="iou_threshold",
-        #     descriptor=ParameterDescriptor(
-        #         type=ParameterType.PARAMETER_DOUBLE,
-        #         description="Obj detection model IOU",
-        #     ),
-        #     value=0.3,
-        # )
-
-        # self.conf_thres = self.get_parameter("conf_threshold").get_parameter_value().double_value
-        # self.iou_thres = self.get_parameter("iou_threshold").get_parameter_value().double_value
-        # self.get_logger().info(f"starting node with {self.conf_thres=} {self.iou_thres=}")
-
         self.get_logger().info(f"starting node")
 
     def _read_in_keys_dict(self, path: str) -> None:
@@ -126,7 +101,6 @@ class ObjectTFPublisherNode(Node):
         self.latest_depth_frame = self.bridge.imgmsg_to_cv2(msg, desired_encoding="passthrough")
 
     def image_callback(self, msg: Image) -> None:
-        # self.get_logger().info("Received image")
         # Convert ROS Image message to OpenCV image
         frame = self.bridge.imgmsg_to_cv2(msg, desired_encoding="bgr8")
         
@@ -141,8 +115,6 @@ class ObjectTFPublisherNode(Node):
         elapsed_time = (end_time - start_time)
         elapsed_time_seconds = elapsed_time.nanoseconds / 1e9
         self.get_logger().info(f"Elapsed time: {elapsed_time_seconds} seconds")
-
-        self.get_logger().info(f"{results=}")
 
         # Process only the first result (change later for best detection)
         result = results[0] 
@@ -159,9 +131,7 @@ class ObjectTFPublisherNode(Node):
         # [[[[451.0, 158.0], [636.0, 158.0], [636.0, 200.0], [451.0, 200.0]], ('contigo', 0.9973969459533691)]]
 
         # Iterate through the results and draw bounding boxes
-        for line in result:
-            self.get_logger().info(f"line: {line}")
-            
+        for line in result:            
             text: str = line[1][0]
             confidence: float = line[1][1]
             bbox = line[0]  # Bounding box coordinates
@@ -187,8 +157,7 @@ class ObjectTFPublisherNode(Node):
 
             X, Y = self.homography.convert_camera(cx, cy, depth)
 
-            # msg.header.frame_id
-            self.publish_tf_global("camera_color_frame", (X, Y, depth), text)
+            self.publish_tf_global(msg.header.frame_id, (X, Y, depth), text)
 
         # Publish the annotated image   
         annotated_frame_image = self.bridge.cv2_to_imgmsg(rgb_frame, encoding="rgb8")
@@ -203,8 +172,7 @@ class ObjectTFPublisherNode(Node):
         # Listen from tf buffer the transform from utm to realsense.
 
         # Change this to "rx200/base_link" if you want to use the base link of the robot as the static parent frame
-        base_frame = "camera_link"
-        self.get_logger().info(f"par frame: {parent_frame}")
+        base_frame = "rx200/base_link"
         try:
             T_IZ_msg = self.tf_buffer.lookup_transform(base_frame, parent_frame, rclpy.time.Time())
         except TransformException as ex:
@@ -231,23 +199,41 @@ class ObjectTFPublisherNode(Node):
 
         # 3. compute TF from realsense to object
         T_ZO = np.eye(4, 4)
+            
         T_ZO[0:3, 3] = np.array(object_pos)  # position in realsense frame
 
         # 4. Compute the transform from utm to object
         T_IO = T_IZ @ T_ZO
+
+        # 5. Hardcoded transform from object to camera
+        # After obtaining the correct XYZ of the object, we hardcode the orientation of 
+        # the object to be the same as the ROS2 Camera link convention.
+
+        # object_pos is in camera optical frame, so we need to rotate 180 degrees around
+        # the z-axis and then flip the x-axis and z-axis
+        # Ros2 Camera link X = Optical z
+        # Ros2 Camera link Y = Optical -x
+        # Ros2 Camera link Z = Optical -y
+        # to get the correct position in the realsense frame
+        T_Opt_ROS = np.eye(4, 4)
+        T_Opt_ROS[0:3, 0:3] = np.array([[0, -1, 0], [0, 0, -1], [1, 0, 0]])
+
+        # Rotate object from camera optical frame to be aligned with ROS2 camera link frame
+        T_IO = T_IO @ T_Opt_ROS
+        
         t_vec = T_IO[0:3, 3]
         quaternion = Rotation.from_matrix(T_IO[0:3, 0:3]).as_quat()
 
         self.get_logger().info(f"object {object_name} at {t_vec}")
-        # 5. broadcast the TF of the object
+        # 6. broadcast the TF of the object
         # Convert the transformation matrix to message and publish.
         new_msg = TransformStamped()
         new_msg.header.stamp = self.get_clock().now().to_msg()
         new_msg.header.frame_id = base_frame
-        new_msg.child_frame_id = f"object_{object_name}"
-        new_msg.transform.translation.x = t_vec[2]
-        new_msg.transform.translation.y = -t_vec[0]
-        new_msg.transform.translation.z = -t_vec[1]
+        new_msg.child_frame_id = f"key_{object_name}"
+        new_msg.transform.translation.x = t_vec[0]
+        new_msg.transform.translation.y = t_vec[1]
+        new_msg.transform.translation.z = t_vec[2]
         new_msg.transform.rotation.x = quaternion[0]
         new_msg.transform.rotation.y = quaternion[1]
         new_msg.transform.rotation.z = quaternion[2]
