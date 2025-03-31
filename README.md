@@ -120,3 +120,9 @@ to launch a transform from a mock `rx200/baselink` coordinate frame to the `came
 ```
 ros2 run perception key_detector
 ```
+
+## Launch RVIZ
+
+```
+rviz -d /path/to/your/key_detection_rviz.rviz
+```
