@@ -22,7 +22,6 @@ setup(
         'scipy',
         'opencv-python',
         'paddleocr',
-        'typing-extensions',
     ],
     zip_safe=True,
     maintainer='Tappy Team',
@@ -33,8 +32,7 @@ setup(
     entry_points={
         'console_scripts': [
             f"key_detector = {object_detection_root}.key_detector:main",
-
-
+            f"mock_baselink = {object_detection_root}.mock_baselink:main",
         ],
     },
 )
