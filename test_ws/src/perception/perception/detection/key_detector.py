@@ -16,7 +16,6 @@ from tf2_ros.static_transform_broadcaster import StaticTransformBroadcaster
 from tf2_ros.transform_listener import TransformListener
 from paddleocr import PaddleOCR
 import cv2
-import os
 import logging
 from ppocr.utils.logging import get_logger
 
