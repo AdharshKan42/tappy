@@ -17,9 +17,10 @@ class KeyboardPublisher(Node):
                 keys_pressed = get_key()
                 for key in keys_pressed:
                     if key.ev_type == "Key" and key.state == 1:
-                        key_pushed = key.code.lower()
+                        key_pushed = key.code.lower().split("_")
+                        key_name = key_pushed[1]
                         output_message = String()
-                        output_message.data = f"the key pushed was {key_pushed}"
+                        output_message.data = f"{key_name}"
                         self.publisher.publish(output_message)
                         self.get_logger().info("it should be published by now")
 
