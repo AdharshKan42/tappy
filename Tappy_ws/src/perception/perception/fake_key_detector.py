@@ -41,25 +41,6 @@ class DynamicBroadcaster(Node):
 
         self.tfb_.sendTransform(tfs)
 
-    # def handle_pose(self, msg):
-
-    #     tfs = TransformStamped()
-    #     tfs.header.stamp = self.get_clock().now().to_msg()
-    #     tfs.header.frame_id = "rx200/base_link"
-    #     tfs._child_frame_id = self.name_
-    #     tfs.transform.translation.x = 0.2
-    #     tfs.transform.translation.y = 0.2
-    #     tfs.transform.translation.z = 0.2
-
-    #     # r = R.from_euler("xyz", [0, 0, msg.theta])
-
-    #     tfs.transform.rotation.x = 1.0
-    #     tfs.transform.rotation.y = 1.5
-    #     tfs.transform.rotation.z = 0.0
-    #     tfs.transform.rotation.w = 0.0
-
-    #     self.tfb_.sendTransform(tfs)
-
 
 def main():
     rclpy.init()
