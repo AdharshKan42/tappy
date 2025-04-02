@@ -22,6 +22,8 @@ class DynamicMoveArm(Node):
         # self.timer = self.create_timer(1.0, self.on_timer)
         self.create_subscription(String, "Sentence_to_type", self.type_sentence, 1)
 
+        self.status_publisher = self.create_publisher(String, "Type_status", 1)
+
         self.get_logger().info("Dynamic_move_arm node started!")
         self.bot = InterbotixManipulatorXS(
             robot_model="rx200",
@@ -33,9 +35,12 @@ class DynamicMoveArm(Node):
         # self.bot.arm.go_to_home_pose()
 
     def type_sentence(self, sentence):
+        self.status_publisher.publish("Started typing")
         characters = list(sentence)
         for char in characters:
             self.type_letter(char)
+
+        self.status_publisher.publish("Done typing")
 
     def type_letter(self, char):
         char_tf_name = "key_" + char
@@ -64,6 +69,9 @@ class DynamicMoveArm(Node):
 
         x = transform.transform.translation.x - self.stick_length
         self.bot.arm.set_ee_pose_components(x=x, y=y, z=z, roll=0, pitch=0)
+
+        msg = char + " typed"
+        self.status_publisher.publish(msg)
 
     # def on_timer(self):
     #     try:
