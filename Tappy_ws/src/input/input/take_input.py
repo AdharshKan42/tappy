@@ -17,7 +17,7 @@ class CollectInput(Node):
 
         self.create_subscription(String, "Type_status", self.prompt_user, 1)
 
-        self.prompt_user(self)
+        self.prompt_user()
         # self.name_ = "fake_key"
         # self.get_logger().info("Broadcasting pose of : {}".format(self.name_))
         # self.tfb_ = TransformBroadcaster(self)
@@ -32,7 +32,7 @@ class CollectInput(Node):
             sentence = input("Enter sentence to be typed:")
 
             if sentence.isalnum():
-                self.sentence_publisher.publish(sentence)
+                self.sentence_publisher.publish(String(data=sentence))
                 break
 
 

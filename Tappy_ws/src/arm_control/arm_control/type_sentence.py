@@ -35,12 +35,12 @@ class DynamicMoveArm(Node):
         # self.bot.arm.go_to_home_pose()
 
     def type_sentence(self, sentence):
-        self.status_publisher.publish("Started typing")
+        self.status_publisher.publish(String(data="Started typing"))
         characters = list(sentence)
         for char in characters:
             self.type_letter(char)
 
-        self.status_publisher.publish("Done typing")
+        self.status_publisher.publish(String(data="Done typing"))
 
     def type_letter(self, char):
         char_tf_name = "key_" + char
@@ -71,7 +71,7 @@ class DynamicMoveArm(Node):
         self.bot.arm.set_ee_pose_components(x=x, y=y, z=z, roll=0, pitch=0)
 
         msg = char + " typed"
-        self.status_publisher.publish(msg)
+        self.status_publisher.publish(String(data=msg))
 
     # def on_timer(self):
     #     try:
