@@ -14,7 +14,7 @@ class DynamicBroadcaster(Node):
 
     def __init__(self):
         super().__init__("dynamic_broadcaster")
-        self.name_ = "fake_key"
+        self.name_ = "key_a"
         self.get_logger().info("Broadcasting pose of : {}".format(self.name_))
         self.tfb_ = TransformBroadcaster(self)
         self.timer = self.create_timer(1.0, self.on_timer)

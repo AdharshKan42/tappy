@@ -35,8 +35,9 @@ class DynamicMoveArm(Node):
         # self.bot.arm.go_to_home_pose()
 
     def type_sentence(self, sentence):
+
         self.status_publisher.publish(String(data="Started typing"))
-        characters = list(sentence)
+        characters = list(sentence.data)
         for char in characters:
             self.type_letter(char)
 

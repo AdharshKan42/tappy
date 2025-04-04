@@ -20,6 +20,7 @@ setup(
     entry_points={
         "console_scripts": [
             "dynamic_arm = arm_control.dynamic_move_arm:main",
+            "type_arm = arm_control.type_sentence:main",
         ],
     },
 )
