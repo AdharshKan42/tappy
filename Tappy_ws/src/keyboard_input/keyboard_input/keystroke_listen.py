@@ -18,9 +18,6 @@ class KeyboardListener(Node):
             f"Im a subscriber and the letter pressed was published {msg.data}"
         )
 
-    def get_data(self, msg):
-        return msg.data
-
 
 def main(args=None):
     rclpy.init(args=args)
