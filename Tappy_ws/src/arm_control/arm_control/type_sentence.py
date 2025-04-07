@@ -19,6 +19,7 @@ class DynamicMoveArm(Node):
         self.tf_buffer = Buffer()
         self.tf_listener = TransformListener(self.tf_buffer, self)
 
+        # self.timer = self.create_timer(1.0, self.on_timer)
         self.create_subscription(String, "next_arm_instruction", self.type_character, 1)
 
         self.get_logger().info("Dynamic_move_arm node started!")
