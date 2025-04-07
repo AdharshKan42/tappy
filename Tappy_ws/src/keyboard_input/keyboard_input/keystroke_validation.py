@@ -52,11 +52,12 @@ class validateKeystrokes(Node):
 
     def validate_keys(self, msg):
         actual_key = msg.data
-        predicted_key = self.queue_list[0]
+        # predicted_key = self.queue_list[0]
         # self.get_logger().info(
         #     f"this is the key its on {predicted_key} and this is the key its typing {actual_key}"
         # )
         if len(self.queue_list) != 0:
+            predicted_key = self.queue_list[0]
             if actual_key == predicted_key:
                 self.queue_list.pop(0)
             else:
@@ -74,6 +75,12 @@ class validateKeystrokes(Node):
                     self.get_logger().info(
                         f"this is the list with new instructions added {self.queue_list}"
                     )
+                elif actual_key == "backspace":
+                    correct_char = self.queue_list[0]
+                    self.queue_list.insert(0, correct_char)
+                    self.get_logger().info(
+                        f"this is the list with new instructions added {self.queue_list}"
+                    )
                 else:
                     correct_char = self.queue_list[0]
                     self.queue_list = self.queue_list[1:]
@@ -83,8 +90,9 @@ class validateKeystrokes(Node):
                         f"this is the list with new instructions added {self.queue_list}"
                     )
 
-                # if self.queue_list:
-                self.publish_next_instruction()
+        if self.queue_list:
+            self.publish_next_instruction()
+
         else:
             self.publish_finish_status()
             # self.populate_queue(self.sentence, self.queue_list)

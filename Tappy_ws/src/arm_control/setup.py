@@ -19,7 +19,6 @@ setup(
     tests_require=["pytest"],
     entry_points={
         "console_scripts": [
-            "dynamic_arm = arm_control.dynamic_move_arm:main",
             "type_arm = arm_control.type_sentence:main",
             "next_key_push = arm_control.next_key_push:main",
         ],
