@@ -19,8 +19,9 @@ setup(
     tests_require=["pytest"],
     entry_points={
         "console_scripts": [
-            "move_arm = arm_control.move_arm:main"
-            "tf_subscriber = arm_control.tf_subscriber:main"
+            "move_arm = arm_control.move_arm:main",
+            "tf_subscriber = arm_control.tf_subscriber:main",
+            "next_key_push = arm_control.next_key_push:main",
         ],
     },
 )
