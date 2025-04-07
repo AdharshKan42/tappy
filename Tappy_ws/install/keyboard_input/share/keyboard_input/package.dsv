@@ -1,6 +1,0 @@
-source;share/keyboard_input/hook/pythonpath.ps1
-source;share/keyboard_input/hook/pythonpath.dsv
-source;share/keyboard_input/hook/pythonpath.sh
-source;share/keyboard_input/hook/ament_prefix_path.ps1
-source;share/keyboard_input/hook/ament_prefix_path.dsv
-source;share/keyboard_input/hook/ament_prefix_path.sh
