@@ -15,7 +15,7 @@ class CollectInput(Node):
 
         self.sentence_publisher = self.create_publisher(String, "Sentence_to_type", 1)
 
-        self.create_subscription(String, "Type_status", self.get_next_input, 1)
+        self.create_subscription(String, "type_status", self.get_next_input, 1)
 
         self.prompt_user()
         # self.name_ = "fake_key"

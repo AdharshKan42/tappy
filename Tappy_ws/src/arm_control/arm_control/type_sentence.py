@@ -19,10 +19,7 @@ class DynamicMoveArm(Node):
         self.tf_buffer = Buffer()
         self.tf_listener = TransformListener(self.tf_buffer, self)
 
-        # self.timer = self.create_timer(1.0, self.on_timer)
-        self.create_subscription(String, "Sentence_to_type", self.type_sentence, 1)
-
-        self.status_publisher = self.create_publisher(String, "Type_status", 1)
+        self.create_subscription(String, "next_arm_instruction", self.type_character, 1)
 
         self.get_logger().info("Dynamic_move_arm node started!")
         self.bot = InterbotixManipulatorXS(
@@ -34,16 +31,7 @@ class DynamicMoveArm(Node):
         robot_startup()
         # self.bot.arm.go_to_home_pose()
 
-    def type_sentence(self, sentence):
-
-        self.status_publisher.publish(String(data="Started typing"))
-        characters = list(sentence.data)
-        for char in characters:
-            self.type_letter(char)
-
-        self.status_publisher.publish(String(data="Done typing"))
-
-    def type_letter(self, char):
+    def type_character(self, char):
         char_tf_name = "key_" + char
         try:
             # the name of the keyboard key frame has to be whatever you define it as
@@ -73,27 +61,6 @@ class DynamicMoveArm(Node):
 
         msg = char + " typed"
         self.status_publisher.publish(String(data=msg))
-
-    # def on_timer(self):
-    #     try:
-    #         # the name of the keyboard key frame has to be whatever you define it as
-    #         transform = self.tf_buffer.lookup_transform(
-    #             "rx200/base_link",
-    #             "fake_key",
-    #             rclpy.time.Time(),
-    #         )
-    #         self.get_logger().info("this is the transform from base to sensor frame")
-    #         # self.get_logger().info(transform.transform.translation.x)
-
-    #     except TransformException as e:
-    #         # self.get_logger().info("blash ")
-    #         self.get_logger().error(e)
-
-    #     # pdb.set_trace()
-    #     x = transform.transform.translation.x
-    #     y = transform.transform.translation.y
-    #     z = transform.transform.translation.z
-    #     self.bot.arm.set_ee_pose_components(x=x, y=y, z=z, roll=0, pitch=0)
 
 
 def main():
