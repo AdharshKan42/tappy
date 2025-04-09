@@ -18,6 +18,7 @@ from paddleocr import PaddleOCR
 import cv2
 import logging
 from ppocr.utils.logging import get_logger
+import pdb
 
 @dataclass
 class Homography:
@@ -39,10 +40,15 @@ class ObjectTFPublisherNode(Node):
     def __init__(self) -> None:
         super().__init__("object_detect_node")
 
-        # Subscribe to image to run object detection on
+        # Subscribe to image topic
         self.image_subscription = self.create_subscription(
-            Image, "/camera/camera/color/image_raw", self.image_callback, 10
+            Image, "/camera/camera/color/image_raw", self.image_subscription_callback, 10
         )
+        self.latest_image_frame = None
+
+        # Timer to control image_callback frequency (e.g., 10 Hz)
+        self.timer_period = 0.5  # seconds
+        self.timer = self.create_timer(self.timer_period, self.image_callback)
         
         # Subscribe to depth to calculate the actual pose relative to camera
         self.depth_subscription = self.create_subscription(
@@ -59,7 +65,7 @@ class ObjectTFPublisherNode(Node):
 
         # internal model
         self.bridge = CvBridge()
-        self.model = PaddleOCR(use_angle_cls=True, lang='en')
+        self.model = PaddleOCR(det=False, rec=True, cls=True, use_angle_cls=True, lang='en')
 
         self.conf_threshold = 0.7
 
@@ -101,9 +107,17 @@ class ObjectTFPublisherNode(Node):
     def depth_callback(self, msg: Image) -> None:
         self.latest_depth_frame = self.bridge.imgmsg_to_cv2(msg, desired_encoding="passthrough")
 
-    def image_callback(self, msg: Image) -> None:
+    def image_subscription_callback(self, msg: Image) -> None:
+        """Stores the latest image frame from the subscription."""
+        self.latest_image_frame = msg
+
+    def image_callback(self) -> None:
+        """Processes the latest image frame at the set frequency."""
+        if self.latest_image_frame is None:
+            return
+
         # Convert ROS Image message to OpenCV image
-        frame = self.bridge.imgmsg_to_cv2(msg, desired_encoding="bgr8")
+        frame = self.bridge.imgmsg_to_cv2(self.latest_image_frame, desired_encoding="bgr8")
 
         rgb_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
         
@@ -126,71 +140,84 @@ class ObjectTFPublisherNode(Node):
         # Filter contours based on size and shape
         keyboard_keys = []
         for cnt in contours:
+            # print(cnt)
+            # pdb.set_trace()
+
+            # Top left corner of the bounding box
             x, y, w, h = cv2.boundingRect(cnt)
             aspect_ratio = w / float(h)
 
+
             # Filter based on size and shape
-            # if 20 < w < 100 and 20 < h < 100 and 0.8 < aspect_ratio < 2.0:
-            keyboard_keys.append((x, y, w, h))
+            if 20 < w < 100 and 20 < h < 100 and 0.8 < aspect_ratio < 1.2:
+                # print(f"w: {w}, h: {h}, aspect_ratio: {aspect_ratio}")
+                keyboard_keys.append((x, y, w, h))      
 
         # Draw contours on the image
+        # Classify outlined keyboard keys
         for (x, y, w, h) in keyboard_keys:
-            cv2.rectangle(rgb_frame, (x, y), (x + w, y + h), (0, 255, 0), 2)
+            start_time = self.get_clock().now()
 
-        # Run OCR tracking on the frame
+            key_frame = rgb_frame[y:y+h, x:x+w]
+            # Resize the key frame to the input size of the model
+            # key_frame_resized = cv2.resize(key_frame, (32, 32))            
+            # cv2.rectangle(rgb_frame, (x, y), (x + w, y + h), (0, 255, 0), 2)
 
-        # Testing inference time for model
-        # start_time = self.get_clock().now()
-        # results = self.model.ocr(rgb_frame, cls=True)
-        # end_time = self.get_clock().now()
-        # elapsed_time = (end_time - start_time)
-        # elapsed_time_seconds = elapsed_time.nanoseconds / 1e9
-        # self.get_logger().info(f"Elapsed time: {elapsed_time_seconds} seconds")
+            # Testing inference time for model
+            results = self.model.ocr(key_frame,det=False, cls=False)
+            
 
-        # Process only the first result (change later for best detection)
-        # result = results[0] 
-        # if result is None or len(result) == 0:
-        #     self.get_logger().error("no detection in result")
-        #     return
+            # Process only the first result (change later for best detection)
+            result = results[0] 
+            if result is None or len(result) == 0:
+                self.get_logger().error("no detection in result")
+                return
 
-        # # Filter out results based on valid keys
-        # result = [
-        #     [box, (text, confidence)]
-        #     for box, (text, confidence) in result
-        #     if text.upper() in self.valid_keys and confidence > self.conf_threshold
-        # ]
-        # # [[[[451.0, 158.0], [636.0, 158.0], [636.0, 200.0], [451.0, 200.0]], ('contigo', 0.9973969459533691)]]
+            # pdb.set_trace()
+            # Filter out results based on valid keys
+            result = [
+                [(text, confidence)]
+                for (text, confidence) in result
+                if text.upper() in self.valid_keys and confidence > self.conf_threshold
+            ]
+            # [[[[451.0, 158.0], [636.0, 158.0], [636.0, 200.0], [451.0, 200.0]], ('contigo', 0.9973969459533691)]]
 
-        # # Iterate through the results and draw bounding boxes
-        # for line in result:            
-        #     self.get_logger().info(f"detected {line[1][0]} with confidence {line[1][1]}")
-        #     text: str = line[1][0]
-        #     confidence: float = line[1][1]
-        #     bbox = line[0]  # Bounding box coordinates
+            # Iterate through the results and draw bounding boxes
+            for line in result:            
+                # pdb.set_trace()
+                self.get_logger().info(f"detected {line[0][0]} with confidence {line[0][1]}")
+                text: str = line[0][0]
+                confidence: float = line[0][1]
+                # bbox = line[0]  # Bounding box coordinates
 
-        #     x_min, y_min = int(bbox[0][0]), int(bbox[0][1])
-        #     x_max, y_max = int(bbox[2][0]), int(bbox[2][1])
+                x_min, y_min = int(x), int(x+w)
+                x_max, y_max = int(y), int(y+h)
 
-        #     # Draw bounding box
-        #     cv2.rectangle(rgb_frame, (x_min, y_min), (x_max, y_max), (0, 255, 0), 2)
-        #     cv2.putText(rgb_frame, text, (x_min, y_min - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 0), 2)
+                # Draw bounding box
+                cv2.rectangle(rgb_frame, (x_min, y_min), (x_max, y_max), (0, 255, 0), 2)
+                cv2.putText(rgb_frame, text, (x_min, y_min - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 0), 2)
 
-        #     x1, y1, x2, y2 = x_min, y_min, x_max, y_max
-        #     cx, cy = int((x1 + x2) // 2), int((y1 + y2) // 2)
+                x1, y1, x2, y2 = x_min, y_min, x_max, y_max
+                cx, cy = int((x1 + x2) // 2), int((y1 + y2) // 2)
 
-        #     depth = self.calculate_depth(x1, y1, x2, y2)
-        #     if depth is None or np.isnan(depth):
-        #         self.get_logger().error(f"no depth for key at {x1, y1, x2, y2}")
-        #         continue
+                depth = self.calculate_depth(x1, y1, x2, y2)
+                if depth is None or np.isnan(depth):
+                    self.get_logger().error(f"no depth for key at {x1, y1, x2, y2}")
+                    continue
 
-        #     if self.homography is None:
-        #         self.get_logger().error("no homography info")
-        #         return
+                if self.homography is None:
+                    self.get_logger().error("no homography info")
+                    return
 
-        #     X, Y = self.homography.convert_camera(cx, cy, depth)
+                X, Y = self.homography.convert_camera(cx, cy, depth)
 
-        #     self.publish_tf_global(msg.header.frame_id, (X, Y, depth), text)
+                self.publish_tf_global(self.latest_image_frame.header.frame_id, (X, Y, depth), text)
 
+            end_time = self.get_clock().now()
+            elapsed_time = (end_time - start_time)
+            elapsed_time_seconds = elapsed_time.nanoseconds / 1e9
+            # self.get_logger().info(f"Elapsed time: {elapsed_time_seconds} seconds")
+            
         # Publish the annotated image   
         annotated_frame_image = self.bridge.cv2_to_imgmsg(rgb_frame, encoding="rgb8")
         self.image_publisher.publish(annotated_frame_image)
