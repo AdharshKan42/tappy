@@ -19,6 +19,7 @@ import cv2
 import logging
 from ppocr.utils.logging import get_logger
 import pdb
+from typing import List, Tuple
 
 @dataclass
 class Homography:
@@ -67,7 +68,7 @@ class ObjectTFPublisherNode(Node):
         self.bridge = CvBridge()
         self.model = PaddleOCR(det=False, rec=True, cls=True, use_angle_cls=True, lang='en')
 
-        self.conf_threshold = 0.7
+        self.conf_threshold = 0.0
 
 
         # TF magic
@@ -136,7 +137,7 @@ class ObjectTFPublisherNode(Node):
 
         # Find contours
         contours, _ = cv2.findContours(dilated, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
-
+        
         # Filter contours based on size and shape
         keyboard_keys = []
         for cnt in contours:
@@ -148,46 +149,63 @@ class ObjectTFPublisherNode(Node):
             aspect_ratio = w / float(h)
 
 
-            # Filter based on size and shape
-            if 20 < w < 100 and 20 < h < 100 and 0.8 < aspect_ratio < 1.2:
-                # print(f"w: {w}, h: {h}, aspect_ratio: {aspect_ratio}")
+
+            # Filter based on size and shape, currently manually tuned (change to use dynamically 
+            # change w,h params based on depth and homography info)
+            if 20 < w < 50 and 20 < h < 50 and 0.7 < aspect_ratio < 1.1:
                 keyboard_keys.append((x, y, w, h))      
+                print(f"w: {w}, h:{h}, aspect_ratio: {aspect_ratio}")
+
+                # cv2.rectangle(rgb_frame, (x, y), (x + w, y + h), (0, 255, 0), 2)
+
+        print(f"found {len(keyboard_keys)} keys")
+        # Sort keyboard keys by w-coordinate from largest to smallest
+        keyboard_keys = sorted(keyboard_keys, key=lambda x: x[2], reverse=True)
+
+
+        # pdb.set_trace()
 
         # Draw contours on the image
         # Classify outlined keyboard keys
-        for (x, y, w, h) in keyboard_keys:
-            start_time = self.get_clock().now()
+        for i in range(min(len(keyboard_keys), 3)):
+            x, y, w, h = keyboard_keys[i]
 
-            key_frame = rgb_frame[y:y+h, x:x+w]
-            # Resize the key frame to the input size of the model
-            # key_frame_resized = cv2.resize(key_frame, (32, 32))            
+            print(f"w: {w}, h:{h}, aspect_ratio: {aspect_ratio}")
             # cv2.rectangle(rgb_frame, (x, y), (x + w, y + h), (0, 255, 0), 2)
 
+        
+            start_time = self.get_clock().now()
+
+            key_frame = rgb_frame[y:y+h, x:x+w]        
+
             # Testing inference time for model
-            results = self.model.ocr(key_frame,det=False, cls=False)
+            results: List[List[Tuple]] = self.model.ocr(key_frame,det=False, cls=False)
+
+            # Sort results by confidence, take the first one
+            result: List[Tuple] = sorted(results, key=lambda x: x[0][1], reverse=True)[0]
+
+            if result is None or len(result) == 0:
+                self.get_logger().error("No detection in result")
+                return
             
 
-            # Process only the first result (change later for best detection)
-            result = results[0] 
-            if result is None or len(result) == 0:
-                self.get_logger().error("no detection in result")
-                return
+            print(f"result: {result}")
 
             # pdb.set_trace()
-            # Filter out results based on valid keys
-            result = [
-                [(text, confidence)]
-                for (text, confidence) in result
-                if text.upper() in self.valid_keys and confidence > self.conf_threshold
-            ]
-            # [[[[451.0, 158.0], [636.0, 158.0], [636.0, 200.0], [451.0, 200.0]], ('contigo', 0.9973969459533691)]]
+            # # Filter out results based on valid keys
+            # result = [
+            #     [(text, confidence)]
+            #     for (text, confidence) in result
+            #     if text.upper() in self.valid_keys and confidence > self.conf_threshold
+            # ]
+            # # [[[[451.0, 158.0], [636.0, 158.0], [636.0, 200.0], [451.0, 200.0]], ('contigo', 0.9973969459533691)]]
 
             # Iterate through the results and draw bounding boxes
             for line in result:            
                 # pdb.set_trace()
-                self.get_logger().info(f"detected {line[0][0]} with confidence {line[0][1]}")
-                text: str = line[0][0]
-                confidence: float = line[0][1]
+                self.get_logger().info(f"detected {line[0]} with confidence {line[1]}")
+                text: str = line[0]
+                confidence: float = line[1]
                 # bbox = line[0]  # Bounding box coordinates
 
                 x_min, y_min = int(x), int(x+w)
@@ -195,7 +213,7 @@ class ObjectTFPublisherNode(Node):
 
                 # Draw bounding box
                 cv2.rectangle(rgb_frame, (x_min, y_min), (x_max, y_max), (0, 255, 0), 2)
-                cv2.putText(rgb_frame, text, (x_min, y_min - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 0), 2)
+                cv2.putText(rgb_frame, f"{text}, {confidence}", (x_min, y_min - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 0), 2)
 
                 x1, y1, x2, y2 = x_min, y_min, x_max, y_max
                 cx, cy = int((x1 + x2) // 2), int((y1 + y2) // 2)
@@ -216,12 +234,32 @@ class ObjectTFPublisherNode(Node):
             end_time = self.get_clock().now()
             elapsed_time = (end_time - start_time)
             elapsed_time_seconds = elapsed_time.nanoseconds / 1e9
-            # self.get_logger().info(f"Elapsed time: {elapsed_time_seconds} seconds")
+            self.get_logger().info(f"Elapsed time: {elapsed_time_seconds} seconds")
             
         # Publish the annotated image   
         annotated_frame_image = self.bridge.cv2_to_imgmsg(rgb_frame, encoding="rgb8")
         self.image_publisher.publish(annotated_frame_image)
 
+    def classify_key(self, key_frame: np.ndarray) -> str:
+        """Classifies the given key frame using the PaddleOCR model."""
+        # Perform OCR on the key frame
+        result = self.model.ocr(key_frame, det=False, cls=True)
+
+        # Sort results by confidence, take the first one
+        result = sorted(result, key=lambda x: x[0][1], reverse=True)[0]
+
+        if result is None or len(result) == 0:
+            self.get_logger().error("No detection in result")
+            return ""
+
+        # Filter out results based on valid keys
+        result = [
+            [(text, confidence)]
+            for (text, confidence) in result
+            if text.upper() in self.valid_keys and confidence > self.conf_threshold
+        ]
+
+        return result[0][0] if result else ""
     def publish_tf_global(
         self, parent_frame: str, object_pos: tuple[float, float, float], object_name: str
     ) -> None:
