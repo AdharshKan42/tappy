@@ -33,6 +33,7 @@ class DynamicMoveArm(Node):
         # self.bot.arm.go_to_home_pose()
 
     def type_character(self, char):
+        char = char.data
         char_tf_name = "key_" + char
         try:
             # the name of the keyboard key frame has to be whatever you define it as
@@ -59,9 +60,6 @@ class DynamicMoveArm(Node):
 
         x = transform.transform.translation.x - self.stick_length
         self.bot.arm.set_ee_pose_components(x=x, y=y, z=z, roll=0, pitch=0)
-
-        msg = char + " typed"
-        self.status_publisher.publish(String(data=msg))
 
 
 def main():
