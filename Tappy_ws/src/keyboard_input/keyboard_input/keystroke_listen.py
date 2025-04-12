@@ -8,7 +8,7 @@ class KeyboardListener(Node):
     def __init__(self):
         super().__init__("keyboard_listener")
         self.subscription = self.create_subscription(
-            String, "keyboard_inp", self.listener_callback, 10
+            String, "external_inp", self.listener_callback, 10
         )
         self.get_logger().info("Listener started listening!")
         self.subscription

@@ -24,6 +24,7 @@ setup(
             "keystroke_publish = keyboard_input.keystroke_publish:main",
             "keystroke_listen = keyboard_input.keystroke_listen:main",
             "keystroke_validation = keyboard_input.keystroke_validation:main",
+            "keystroke_external = keyboard_input.keystroke_external:main",
         ],
     },
 )
