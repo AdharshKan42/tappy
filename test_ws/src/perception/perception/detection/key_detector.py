@@ -150,7 +150,7 @@ class ObjectTFPublisherNode(Node):
 
             # Filter based on size and shape, currently manually tuned (change to use dynamically 
             # change w,h params based on depth and homography info)
-            if 20 < w < 50 and 20 < h < 50 and 0.7 < aspect_ratio < 1.1:
+            if 30 < w < 80 and 30 < h < 80 and 0.7 < aspect_ratio < 1.1:
                 keyboard_keys.append((x, y, w, h))      
                 print(f"w: {w}, h:{h}, aspect_ratio: {aspect_ratio}")
 
@@ -165,11 +165,11 @@ class ObjectTFPublisherNode(Node):
 
         # Draw contours on the image
         # Classify outlined keyboard keys
-        for i in range(min(len(keyboard_keys), 1)):
+        for i in range(min(len(keyboard_keys), 5)):
             x, y, w, h = keyboard_keys[i]
 
             # print(f"w: {w}, h:{h}, aspect_ratio: {aspect_ratio}")
-            cv2.rectangle(rgb_frame, (x, y), (x + w, y + h), (0, 255, 0), 2)
+            # cv2.rectangle(rgb_frame, (x, y), (x + w, y + h), (0, 255, 0), 2)
 
         
             start_time = self.get_clock().now()
