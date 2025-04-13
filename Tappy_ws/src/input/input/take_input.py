@@ -44,10 +44,10 @@ def main():
     rclpy.init()
     node = CollectInput()
 
-    try:
-        rclpy.spin(node)
-    except KeyboardInterrupt:
-        pass
+    # try:
+    rclpy.spin(node)
+    # except KeyboardInterrupt:
+    #     pass
 
     node.destroy_node()
     rclpy.shutdown()

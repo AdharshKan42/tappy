@@ -8,14 +8,16 @@ import pdb
 from std_msgs.msg import String
 from interbotix_common_modules.common_robot.robot import robot_shutdown, robot_startup
 from interbotix_xs_modules.xs_robot.arm import InterbotixManipulatorXS
+import math
+from scipy.spatial.transform import Rotation
 
 
 class DynamicMoveArm(Node):
 
     def __init__(self):
         super().__init__("Dynamic_move_arm")
-        self.stick_length = 0.05
-        self.push_dist = 0.01
+        self.stick_length = 0.09398
+        self.push_dist = 0.005
         self.tf_buffer = Buffer()
         self.tf_listener = TransformListener(self.tf_buffer, self)
 
@@ -27,6 +29,7 @@ class DynamicMoveArm(Node):
             String, "perception/object_tf/existing_key", self.update_existing_key, 1
         )
 
+        self.existing_key = "t"
         self.get_logger().info("Dynamic_move_arm node started!")
         self.bot = InterbotixManipulatorXS(
             robot_model="rx200",
@@ -38,39 +41,60 @@ class DynamicMoveArm(Node):
         # self.bot.arm.go_to_home_pose()
 
     def type_character(self, msg):
-        char = msg.data
-        existing_key_tf = "key_" + self.existing_key
-        try:
-            # the name of the keyboard key frame has to be whatever you define it as
-            transform = self.tf_buffer.lookup_transform(
-                "rx200/base_link",
-                existing_key_tf,
-                rclpy.time.Time(),
-            )
-            tf_diff = [0, 0]
-            if self.existing_key != char:
-                tf_diff = self.map_keyboard_keys(self.existing_key, char)
+        print("im in tpakdslj;f")
+        if self.existing_key != "":
+            char = msg.data
+            existing_key_tf = "key_" + self.existing_key.upper()
+            try:
+                self.get_logger().info("looking up transform")
+                # the name of the keyboard key frame has to be whatever you define it as
+                transform = self.tf_buffer.lookup_transform(
+                    "rx200/base_link",
+                    existing_key_tf,
+                    rclpy.time.Time(),
+                )
+                self.get_logger().info(
+                    f"this is the transform from {existing_key_tf} to base link : {transform}"
+                )
+                tf_diff = [0, 0]
+                if self.existing_key != char:
+                    tf_diff = self.map_keyboard_keys(self.existing_key, char)
+                    self.get_logger().info(
+                        f"this is the difference between {self.existing_key} and {char} : {tf_diff}")
+                self.get_logger().info("this is the transform from base to sensor frame")
 
-            self.get_logger().info("this is the transform from base to sensor frame")
+            except TransformException as e:
+                self.get_logger().error(e)
+                return
 
-        except TransformException as e:
-            # self.get_logger().info("blash ")
-            self.get_logger().error(e)
+            # Extract roll, pitch, yaw from the transform's quaternion
+            rotation = Rotation.from_quat([
+                transform.transform.rotation.x,
+                transform.transform.rotation.y,
+                transform.transform.rotation.z,
+                transform.transform.rotation.w,
+            ])
+            roll, pitch, yaw = rotation.as_euler('xyz')
 
-        # pdb.set_trace()
-        x = transform.transform.translation.x - self.stick_length
-        y = transform.transform.translation.y + tf_diff[0]
-        z = transform.transform.translation.z + tf_diff[1]
-        self.bot.arm.set_ee_pose_components(x=x, y=y, z=z, roll=0, pitch=0)
+            deg_90 = math.radians(90)
+            # Move to the target position
+            x = transform.transform.translation.x 
+            y = transform.transform.translation.y + tf_diff[0]
+            z = transform.transform.translation.z + tf_diff[1] + self.stick_length
+            self.bot.arm.set_ee_pose_components(x=x, y=y, z=z, roll=roll, pitch=deg_90, yaw=yaw)
 
-        x = transform.transform.translation.x - self.stick_length + self.push_dist
-        self.bot.arm.set_ee_pose_components(x=x, y=y, z=z, roll=0, pitch=0)
+            # Push the key
+            z = transform.transform.translation.z + self.stick_length - self.push_dist
+            self.bot.arm.set_ee_pose_components(x=x, y=y, z=z, roll=roll, pitch=deg_90, yaw=yaw)
 
-        x = transform.transform.translation.x - self.stick_length
-        self.bot.arm.set_ee_pose_components(x=x, y=y, z=z, roll=0, pitch=0)
+            # Return to the original position
+            z = transform.transform.translation.x + self.stick_length
+            self.bot.arm.set_ee_pose_components(x=x, y=y, z=z, roll=roll, pitch=deg_90, yaw=yaw)
 
     def update_existing_key(self, msg):
+        """Callback to update the existing key from the topic."""
         self.existing_key = msg.data.lower()
+        self.get_logger().info(f"Updated existing key: {self.existing_key}")
 
     def transform_coordinates(self, key_1, key_2):
         y1, z1 = key_1
@@ -104,8 +128,8 @@ class DynamicMoveArm(Node):
             "o": [0.1844, 0.02],
             "p": [0.2029, 0.02],
             "[": [0.2222, 0.02],
-            "]": [24.28, 0.02],
-            "capslock": [1, 0.02],
+            "]": [0.2428, 0.02],
+            "capslock": [0.0254, 0.02],
             "a": [0.0345, 0.0386],
             "s": [0.0526, 0.0386],
             "d": [0.0724, 0.0386],

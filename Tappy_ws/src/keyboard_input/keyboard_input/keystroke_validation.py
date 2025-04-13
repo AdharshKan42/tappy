@@ -46,6 +46,8 @@ class validateKeystrokes(Node):
     def get_input_sentence(self, msg):
         self.sentence = msg.data
         self.populate_queue(self.sentence, self.queue_list)
+        self.get_logger().info(f"queue: {self.queue_list}")
+        
         first_instr = String()
         first_instr.data = self.queue_list[0]
         self.instruction_publisher.publish(first_instr)

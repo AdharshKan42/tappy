@@ -21,7 +21,7 @@ class ExternalKeyboardInput(Node):
         #     Pose, "{}/pose".format(self.name_), self.handle_pose, 10
         # )
         self.device = InputDevice(
-            "/dev/input/by-id/usb-SINO_WEALTH_Gaming_KB-event-kbd"
+            "/dev/input/by-id/usb-Logitech_USB_Keyboard-event-kbd"
         )
         self.device.grab()
 

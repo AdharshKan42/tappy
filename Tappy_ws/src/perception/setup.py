@@ -21,7 +21,6 @@ setup(
         'numpy',
         'scipy',
         'opencv-python',
-        'paddleocr',
     ],
     zip_safe=True,
     maintainer='Tappy Team',
@@ -33,6 +32,7 @@ setup(
         'console_scripts': [
             f"key_detector = {object_detection_root}.key_detector:main",
             f"mock_baselink = {object_detection_root}.mock_baselink:main",
+            f"fake_key_detector = {package_name}.fake_key_detector:main",
         ],
     },
 )

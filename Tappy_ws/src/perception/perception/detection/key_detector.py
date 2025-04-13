@@ -13,14 +13,12 @@ from tf2_ros.buffer import Buffer
 from tf2_ros.static_transform_broadcaster import StaticTransformBroadcaster
 from tf2_ros.transform_listener import TransformListener
 import cv2
-import logging
 import pdb
 from typing import List, Tuple, Union, Optional
 
 from google import genai
 import os
 from PIL import Image as im
-import io
 import time
 
 @dataclass
@@ -134,8 +132,8 @@ class ObjectTFPublisherNode(Node):
         if self.latest_image_frame is None:
             return
 
-        # if self.existing_key:
-        #     return
+        if self.existing_key:
+            return
 
         # Convert ROS Image message to OpenCV image
         frame = self.bridge.imgmsg_to_cv2(self.latest_image_frame, desired_encoding="bgr8")
@@ -173,19 +171,19 @@ class ObjectTFPublisherNode(Node):
             if 30 < w < 100 and 30 < h < 100 and 0.7 < aspect_ratio < 1.2:
                 keyboard_keys.append((x, y, w, h))      
                 print(f"w: {w}, h:{h}, aspect_ratio: {aspect_ratio}")
-
                 cv2.rectangle(rgb_frame, (x, y), (x + w, y + h), (0, 255, 0), 2)
+
 
         # print(f"found {len(keyboard_keys)} keys")
         # Sort keyboard keys by w-coordinate from largest to smallest
-        keyboard_keys = sorted(keyboard_keys, key=lambda x: x[2], reverse=True)
+        # keyboard_keys = sorted(keyboard_keys, key=lambda x: x[2], reverse=True)
 
 
         # pdb.set_trace()
 
         # Draw contours on the image
         # Classify outlined keyboard keys
-        for i in range(min(len(keyboard_keys), 3)):
+        for i in range(min(len(keyboard_keys), 15)):
             x, y, w, h = keyboard_keys[i]
 
             # print(f"w: {w}, h:{h}, aspect_ratio: {aspect_ratio}")
@@ -197,7 +195,7 @@ class ObjectTFPublisherNode(Node):
             # self.counter += 1
             # cv2.waitKey(1)
             result = self.classify_key(rgb_frame[y:y+h, x:x+w])
-            if result == "<unknown>" or result == "unknown":
+            if result.lower() == "<unknown>" or result.lower() == "unknown":
                 self.get_logger().error(f"unknown detected")
                 continue
 
@@ -239,11 +237,13 @@ class ObjectTFPublisherNode(Node):
                 msg = String()
                 msg.data = result
                 self.existing_key_publisher.publish(msg)
+                self.get_logger().info(f"existing key: {result}")
                 break
         # Publish the annotated image   
         annotated_frame_image = self.bridge.cv2_to_imgmsg(rgb_frame, encoding="rgb8")
         self.image_publisher.publish(annotated_frame_image)
 
+    
     def classify_key(self, key_frame: np.ndarray) -> Union[str, None]:
         """Classifies the given key frame using Gemini."""
         try:

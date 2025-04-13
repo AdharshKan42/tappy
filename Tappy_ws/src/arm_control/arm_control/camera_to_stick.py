@@ -45,7 +45,7 @@ class Camera_Stick_broadcaster(Node):
         tfs = TransformStamped()
         tfs.header.stamp = self.get_clock().now().to_msg()
         tfs.header.frame_id = "stick_end"
-        tfs.child_frame_id = "camera"
+        tfs.child_frame_id = "camera_link"
         tfs.transform.translation.x = -0.08128
         tfs.transform.translation.y = 0.01778
         tfs.transform.translation.z = 0.0381
