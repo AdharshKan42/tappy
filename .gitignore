@@ -180,3 +180,5 @@ AMENT_IGNORE
 
 # ROS bags
 rosbag*/
+
+*.png
