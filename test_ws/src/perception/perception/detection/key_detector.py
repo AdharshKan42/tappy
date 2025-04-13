@@ -19,7 +19,7 @@ import cv2
 import logging
 from ppocr.utils.logging import get_logger
 import pdb
-from typing import List, Tuple
+from typing import List, Tuple, Union
 
 @dataclass
 class Homography:
@@ -68,7 +68,7 @@ class ObjectTFPublisherNode(Node):
         self.bridge = CvBridge()
         self.model = PaddleOCR(det=False, rec=True, cls=True, use_angle_cls=True, lang='en')
 
-        self.conf_threshold = 0.0
+        self.conf_threshold = 0.6
 
 
         # TF magic
@@ -89,7 +89,7 @@ class ObjectTFPublisherNode(Node):
         with open(path, "r") as f:
             lines = f.readlines()
             lines = [line.strip() for line in lines]
-            self.get_logger().info(f"read in keys dict: {lines}")
+            # self.get_logger().info(f"read in keys dict: {lines}")
             return lines
 
     def camera_info_callback(self, msg: CameraInfo) -> None:
@@ -148,17 +148,15 @@ class ObjectTFPublisherNode(Node):
             x, y, w, h = cv2.boundingRect(cnt)
             aspect_ratio = w / float(h)
 
-
-
             # Filter based on size and shape, currently manually tuned (change to use dynamically 
             # change w,h params based on depth and homography info)
             if 20 < w < 50 and 20 < h < 50 and 0.7 < aspect_ratio < 1.1:
                 keyboard_keys.append((x, y, w, h))      
                 print(f"w: {w}, h:{h}, aspect_ratio: {aspect_ratio}")
 
-                # cv2.rectangle(rgb_frame, (x, y), (x + w, y + h), (0, 255, 0), 2)
+                cv2.rectangle(rgb_frame, (x, y), (x + w, y + h), (0, 255, 0), 2)
 
-        print(f"found {len(keyboard_keys)} keys")
+        # print(f"found {len(keyboard_keys)} keys")
         # Sort keyboard keys by w-coordinate from largest to smallest
         keyboard_keys = sorted(keyboard_keys, key=lambda x: x[2], reverse=True)
 
@@ -167,80 +165,58 @@ class ObjectTFPublisherNode(Node):
 
         # Draw contours on the image
         # Classify outlined keyboard keys
-        for i in range(min(len(keyboard_keys), 3)):
+        for i in range(min(len(keyboard_keys), 1)):
             x, y, w, h = keyboard_keys[i]
 
-            print(f"w: {w}, h:{h}, aspect_ratio: {aspect_ratio}")
-            # cv2.rectangle(rgb_frame, (x, y), (x + w, y + h), (0, 255, 0), 2)
+            # print(f"w: {w}, h:{h}, aspect_ratio: {aspect_ratio}")
+            cv2.rectangle(rgb_frame, (x, y), (x + w, y + h), (0, 255, 0), 2)
 
         
             start_time = self.get_clock().now()
+            result = self.classify_key(rgb_frame[y:y+h, x:x+w])
+            if result is None:
+                continue
+        
 
-            key_frame = rgb_frame[y:y+h, x:x+w]        
+            self.get_logger().info(f"detected {result[0]} with confidence {result[1]}")
 
-            # Testing inference time for model
-            results: List[List[Tuple]] = self.model.ocr(key_frame,det=False, cls=False)
+            text: str = result[0]
+            confidence: float = result[1]
 
-            # Sort results by confidence, take the first one
-            result: List[Tuple] = sorted(results, key=lambda x: x[0][1], reverse=True)[0]
+            x_min, y_min = int(x), int(y)
+            x_max, y_max = int(x+w), int(y+h)
 
-            if result is None or len(result) == 0:
-                self.get_logger().error("No detection in result")
+            # Draw bounding box
+            cv2.rectangle(rgb_frame, (x_min, y_min), (x_max, y_max), (0, 255, 0), 2)
+            cv2.putText(rgb_frame, f"{text}, {confidence}", (x_min, y_min - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 0), 2)
+
+            # calculate robot pose 
+            x1, y1, x2, y2 = x_min, y_min, x_max, y_max
+            cx, cy = int((x1 + x2) // 2), int((y1 + y2) // 2)
+
+            depth = self.calculate_depth(x1, y1, x2, y2)
+            if depth is None or np.isnan(depth):
+                self.get_logger().error(f"no depth for key at {x1, y1, x2, y2}")
+                continue
+
+            if self.homography is None:
+                self.get_logger().error("no homography info")
                 return
-            
 
-            print(f"result: {result}")
+            X, Y = self.homography.convert_camera(cx, cy, depth)
 
-            # pdb.set_trace()
-            # # Filter out results based on valid keys
-            # result = [
-            #     [(text, confidence)]
-            #     for (text, confidence) in result
-            #     if text.upper() in self.valid_keys and confidence > self.conf_threshold
-            # ]
-            # # [[[[451.0, 158.0], [636.0, 158.0], [636.0, 200.0], [451.0, 200.0]], ('contigo', 0.9973969459533691)]]
-
-            # Iterate through the results and draw bounding boxes
-            for line in result:            
-                # pdb.set_trace()
-                self.get_logger().info(f"detected {line[0]} with confidence {line[1]}")
-                text: str = line[0]
-                confidence: float = line[1]
-                # bbox = line[0]  # Bounding box coordinates
-
-                x_min, y_min = int(x), int(x+w)
-                x_max, y_max = int(y), int(y+h)
-
-                # Draw bounding box
-                cv2.rectangle(rgb_frame, (x_min, y_min), (x_max, y_max), (0, 255, 0), 2)
-                cv2.putText(rgb_frame, f"{text}, {confidence}", (x_min, y_min - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 0), 2)
-
-                x1, y1, x2, y2 = x_min, y_min, x_max, y_max
-                cx, cy = int((x1 + x2) // 2), int((y1 + y2) // 2)
-
-                depth = self.calculate_depth(x1, y1, x2, y2)
-                if depth is None or np.isnan(depth):
-                    self.get_logger().error(f"no depth for key at {x1, y1, x2, y2}")
-                    continue
-
-                if self.homography is None:
-                    self.get_logger().error("no homography info")
-                    return
-
-                X, Y = self.homography.convert_camera(cx, cy, depth)
-
-                self.publish_tf_global(self.latest_image_frame.header.frame_id, (X, Y, depth), text)
+            self.publish_tf_global(self.latest_image_frame.header.frame_id, (X, Y, depth), text)
 
             end_time = self.get_clock().now()
             elapsed_time = (end_time - start_time)
             elapsed_time_seconds = elapsed_time.nanoseconds / 1e9
-            self.get_logger().info(f"Elapsed time: {elapsed_time_seconds} seconds")
+            self.get_logger().info(f"Elapsed time for {text}: {elapsed_time_seconds} seconds")
             
         # Publish the annotated image   
         annotated_frame_image = self.bridge.cv2_to_imgmsg(rgb_frame, encoding="rgb8")
         self.image_publisher.publish(annotated_frame_image)
 
-    def classify_key(self, key_frame: np.ndarray) -> str:
+    def classify_key(self, key_frame: np.ndarray) -> Union[str, None]:
         """Classifies the given key frame using the PaddleOCR model."""
         # Perform OCR on the key frame
         result = self.model.ocr(key_frame, det=False, cls=True)
@@ -250,16 +226,17 @@ class ObjectTFPublisherNode(Node):
 
         if result is None or len(result) == 0:
             self.get_logger().error("No detection in result")
-            return ""
+            return None
 
         # Filter out results based on valid keys
         result = [
-            [(text, confidence)]
+            (text, confidence)
             for (text, confidence) in result
             if text.upper() in self.valid_keys and confidence > self.conf_threshold
         ]
 
-        return result[0][0] if result else ""
+        return result[0] if result else None
+
     def publish_tf_global(
         self, parent_frame: str, object_pos: tuple[float, float, float], object_name: str
     ) -> None:
@@ -321,7 +298,7 @@ class ObjectTFPublisherNode(Node):
         t_vec = T_IO[0:3, 3]
         quaternion = Rotation.from_matrix(T_IO[0:3, 0:3]).as_quat()
 
-        self.get_logger().info(f"object {object_name} at {t_vec}")
+        # self.get_logger().info(f"object {object_name} at {t_vec}")
         # 6. broadcast the TF of the object
         # Convert the transformation matrix to message and publish.
         new_msg = TransformStamped()
