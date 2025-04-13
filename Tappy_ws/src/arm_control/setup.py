@@ -1,6 +1,6 @@
 from setuptools import find_packages, setup
 
-package_name = "my_robot_controller"
+package_name = "arm_control"
 
 setup(
     name=package_name,
@@ -18,6 +18,9 @@ setup(
     license="TODO: License declaration",
     tests_require=["pytest"],
     entry_points={
-        "console_scripts": ["test_node = my_robot_controller.my_first_node:main"],
+        "console_scripts": [
+            "type_arm = arm_control.type_sentence:main",
+            "camera_to_stick = arm_control.camera_to_stick:main",
+        ],
     },
 )
