@@ -43,7 +43,13 @@ class DynamicMoveArm(Node):
                 rclpy.time.Time(),
             )
             self.get_logger().info("this is the transform from base to sensor frame")
-            # self.get_logger().info(transform.transform.translation.x)
+
+            t = self.tf_buffer.lookup_transform(
+                "rx200/ee_gripper_link",
+                "stick_end",
+                rclpy.time.Time(),
+            )
+            self.get_logger().info("this is the transform from gripper to stick end")
 
         except TransformException as e:
             # self.get_logger().info("blash ")

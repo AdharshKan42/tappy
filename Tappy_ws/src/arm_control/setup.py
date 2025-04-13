@@ -20,7 +20,7 @@ setup(
     entry_points={
         "console_scripts": [
             "type_arm = arm_control.type_sentence:main",
-            "next_key_push = arm_control.next_key_push:main",
+            "camera_to_stick = arm_control.camera_to_stick:main",
         ],
     },
 )
