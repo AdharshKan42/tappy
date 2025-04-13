@@ -180,3 +180,6 @@ AMENT_IGNORE
 
 # ROS bags
 rosbag*/
+
+# VSCode
+.vscode/
