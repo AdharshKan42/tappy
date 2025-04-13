@@ -1,7 +1,4 @@
-import os
 from dataclasses import dataclass
-from typing import Optional
-
 import numpy as np
 import rclpy
 from ament_index_python.packages import get_package_share_directory
@@ -10,14 +7,21 @@ from geometry_msgs.msg import TransformStamped
 from rclpy.node import Node
 from scipy.spatial.transform import Rotation
 from sensor_msgs.msg import CameraInfo, Image
+from std_msgs.msg import String
 from tf2_ros import TransformException
 from tf2_ros.buffer import Buffer
 from tf2_ros.static_transform_broadcaster import StaticTransformBroadcaster
 from tf2_ros.transform_listener import TransformListener
-from paddleocr import PaddleOCR
 import cv2
 import logging
-from ppocr.utils.logging import get_logger
+import pdb
+from typing import List, Tuple, Union, Optional
+
+from google import genai
+import os
+from PIL import Image as im
+import io
+import time
 
 @dataclass
 class Homography:
@@ -39,10 +43,15 @@ class ObjectTFPublisherNode(Node):
     def __init__(self) -> None:
         super().__init__("object_detect_node")
 
-        # Subscribe to image to run object detection on
+        # Subscribe to image topic
         self.image_subscription = self.create_subscription(
-            Image, "/camera/camera/color/image_raw", self.image_callback, 10
+            Image, "/camera/camera/color/image_raw", self.image_subscription_callback, 10
         )
+        self.latest_image_frame = None
+
+        # Timer to control image_callback frequency (e.g., 10 Hz)
+        self.timer_period = 0.5  # seconds
+        self.timer = self.create_timer(self.timer_period, self.image_callback)
         
         # Subscribe to depth to calculate the actual pose relative to camera
         self.depth_subscription = self.create_subscription(
@@ -53,21 +62,26 @@ class ObjectTFPublisherNode(Node):
         # Annotated image publisher with detections
         self.image_publisher = self.create_publisher(Image, "perception/object_tf/image", 10)
 
+        self.existing_key_publisher = self.create_publisher(String, "perception/object_tf/existing_key", 10)
+
+        self.existing_key = False
         # Model-specific parameters
         package_dir = get_package_share_directory("perception")
         self.valid_keys = self._read_in_keys_dict(os.path.join(package_dir, "model/keys_dict.txt"))
 
         # internal model
         self.bridge = CvBridge()
-        self.model = PaddleOCR(use_angle_cls=True, lang='en')
+        self.init_gemini()
 
-        self.conf_threshold = 0.7
+        self.conf_threshold = 0.6
 
 
         # TF magic
         self.tf_static_broadcaster = StaticTransformBroadcaster(self)
         self.tf_buffer = Buffer()
         self.tf_listener = TransformListener(self.tf_buffer, self)
+        self.counter = 0
+
 
         # Subscribe to realsense intrinsics to get the homography matrix
         self.create_subscription(
@@ -77,12 +91,22 @@ class ObjectTFPublisherNode(Node):
 
         self.get_logger().info(f"starting node")
 
+    def init_gemini(self):
+        # GOOGLE_API_KEY = os.environ.get("GOOGLE_API_KEY")
+        GOOGLE_API_KEY = "AIzaSyBPJrYi4j_2UL-i6V28ssXNokPV4WizUv4"  # Replace with your actual API key
+        if not GOOGLE_API_KEY:
+            raise ValueError("Please set the GOOGLE_API_KEY environment variable.")
+        
+        # Initialize the Gemini API
+        self.client = genai.Client(api_key=GOOGLE_API_KEY)
+
+
     def _read_in_keys_dict(self, path: str) -> None:
         """Reads in the keys dictionary from the given path and returns a list of keys."""
         with open(path, "r") as f:
             lines = f.readlines()
             lines = [line.strip() for line in lines]
-            self.get_logger().info(f"read in keys dict: {lines}")
+            # self.get_logger().info(f"read in keys dict: {lines}")
             return lines
 
     def camera_info_callback(self, msg: CameraInfo) -> None:
@@ -101,50 +125,94 @@ class ObjectTFPublisherNode(Node):
     def depth_callback(self, msg: Image) -> None:
         self.latest_depth_frame = self.bridge.imgmsg_to_cv2(msg, desired_encoding="passthrough")
 
-    def image_callback(self, msg: Image) -> None:
-        # Convert ROS Image message to OpenCV image
-        frame = self.bridge.imgmsg_to_cv2(msg, desired_encoding="bgr8")
-        
-        rgb_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+    def image_subscription_callback(self, msg: Image) -> None:
+        """Stores the latest image frame from the subscription."""
+        self.latest_image_frame = msg
 
-        # Run OCR tracking on the frame
-
-        # Testing inference time for model
-        start_time = self.get_clock().now()
-        results = self.model.ocr(rgb_frame, cls=True)
-        end_time = self.get_clock().now()
-        elapsed_time = (end_time - start_time)
-        elapsed_time_seconds = elapsed_time.nanoseconds / 1e9
-        self.get_logger().info(f"Elapsed time: {elapsed_time_seconds} seconds")
-
-        # Process only the first result (change later for best detection)
-        result = results[0] 
-        if result is None or len(result) == 0:
-            self.get_logger().error("no detection in result")
+    def image_callback(self) -> None:
+        """Processes the latest image frame at the set frequency."""
+        if self.latest_image_frame is None:
             return
 
-        # Filter out results based on valid keys
-        result = [
-            [box, (text, confidence)]
-            for box, (text, confidence) in result
-            if text.upper() in self.valid_keys and confidence > self.conf_threshold
-        ]
-        # [[[[451.0, 158.0], [636.0, 158.0], [636.0, 200.0], [451.0, 200.0]], ('contigo', 0.9973969459533691)]]
+        # if self.existing_key:
+        #     return
 
-        # Iterate through the results and draw bounding boxes
-        for line in result:            
-            self.get_logger().info(f"detected {line[1][0]} with confidence {line[1][1]}")
-            text: str = line[1][0]
-            confidence: float = line[1][1]
-            bbox = line[0]  # Bounding box coordinates
+        # Convert ROS Image message to OpenCV image
+        frame = self.bridge.imgmsg_to_cv2(self.latest_image_frame, desired_encoding="bgr8")
 
-            x_min, y_min = int(bbox[0][0]), int(bbox[0][1])
-            x_max, y_max = int(bbox[2][0]), int(bbox[2][1])
+        rgb_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+        
+        # Convert BGR to Grayscale
+        gray_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+
+        # Apply Gaussian blur
+        blurred = cv2.GaussianBlur(gray_frame, (5,5), 0)
+
+        # Perform edge detection
+        edges = cv2.Canny(blurred, 50, 150)
+
+        # Apply dilation to close gaps in edges
+        kernel = np.ones((3,3), np.uint8)
+        dilated = cv2.dilate(edges, kernel, iterations=2)
+
+        # Find contours
+        contours, _ = cv2.findContours(dilated, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+        
+        # Filter contours based on size and shape
+        keyboard_keys = []
+        for cnt in contours:
+            # print(cnt)
+            # pdb.set_trace()
+
+            # Top left corner of the bounding box
+            x, y, w, h = cv2.boundingRect(cnt)
+            aspect_ratio = w / float(h)
+
+            # Filter based on size and shape, currently manually tuned (change to use dynamically 
+            # change w,h params based on depth and homography info)
+            if 30 < w < 100 and 30 < h < 100 and 0.7 < aspect_ratio < 1.2:
+                keyboard_keys.append((x, y, w, h))      
+                print(f"w: {w}, h:{h}, aspect_ratio: {aspect_ratio}")
+
+                cv2.rectangle(rgb_frame, (x, y), (x + w, y + h), (0, 255, 0), 2)
+
+        # print(f"found {len(keyboard_keys)} keys")
+        # Sort keyboard keys by w-coordinate from largest to smallest
+        keyboard_keys = sorted(keyboard_keys, key=lambda x: x[2], reverse=True)
+
+
+        # pdb.set_trace()
+
+        # Draw contours on the image
+        # Classify outlined keyboard keys
+        for i in range(min(len(keyboard_keys), 3)):
+            x, y, w, h = keyboard_keys[i]
+
+            # print(f"w: {w}, h:{h}, aspect_ratio: {aspect_ratio}")
+            # cv2.rectangle(rgb_frame, (x, y), (x + w, y + h), (0, 255, 0), 2)
+
+        
+            start_time = self.get_clock().now()
+            # cv2.imwrite(f"test_keys/key_{self.counter}.png", rgb_frame[y:y+h, x:x+w])
+            # self.counter += 1
+            # cv2.waitKey(1)
+            result = self.classify_key(rgb_frame[y:y+h, x:x+w])
+            if result == "<unknown>" or result == "unknown":
+                self.get_logger().error(f"unknown detected")
+                continue
+
+            self.get_logger().info(f"detected {result}")
+
+            text: str = result
+
+            x_min, y_min = int(x), int(y)
+            x_max, y_max = int(x+w), int(y+h)
 
             # Draw bounding box
             cv2.rectangle(rgb_frame, (x_min, y_min), (x_max, y_max), (0, 255, 0), 2)
-            cv2.putText(rgb_frame, text, (x_min, y_min - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 0), 2)
+            cv2.putText(rgb_frame, f"{text}", (x_min, y_min - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 0), 2)
 
+            # calculate robot pose 
             x1, y1, x2, y2 = x_min, y_min, x_max, y_max
             cx, cy = int((x1 + x2) // 2), int((y1 + y2) // 2)
 
@@ -159,11 +227,39 @@ class ObjectTFPublisherNode(Node):
 
             X, Y = self.homography.convert_camera(cx, cy, depth)
 
-            self.publish_tf_global(msg.header.frame_id, (X, Y, depth), text)
+            self.publish_tf_global(self.latest_image_frame.header.frame_id, (X, Y, depth), text)
 
+            end_time = self.get_clock().now()
+            elapsed_time = (end_time - start_time)
+            elapsed_time_seconds = elapsed_time.nanoseconds / 1e9
+            self.get_logger().info(f"Elapsed time for {text}: {elapsed_time_seconds} seconds")
+            
+            if result in self.valid_keys:
+                self.existing_key = True
+                msg = String()
+                msg.data = result
+                self.existing_key_publisher.publish(msg)
+                break
         # Publish the annotated image   
         annotated_frame_image = self.bridge.cv2_to_imgmsg(rgb_frame, encoding="rgb8")
         self.image_publisher.publish(annotated_frame_image)
+
+    def classify_key(self, key_frame: np.ndarray) -> Union[str, None]:
+        """Classifies the given key frame using Gemini."""
+        try:
+            pil_image = im.fromarray(cv2.cvtColor(key_frame, cv2.COLOR_BGR2RGB))
+
+            prompt = "What letter is on this key of a QWERTY keyboard? Only output a character, unknown, or any of these keys: CTRL, ALT, TAB. Do not output any other text."
+
+            response = self.client.models.generate_content(model="gemini-2.0-flash",
+                                                           contents = [prompt, pil_image])
+
+            time.sleep(4.1)
+            return response.text.strip()
+
+        except Exception as e:
+            print(f"An error occurred during image analysis: {e}")
+            return None
 
     def publish_tf_global(
         self, parent_frame: str, object_pos: tuple[float, float, float], object_name: str
@@ -226,7 +322,7 @@ class ObjectTFPublisherNode(Node):
         t_vec = T_IO[0:3, 3]
         quaternion = Rotation.from_matrix(T_IO[0:3, 0:3]).as_quat()
 
-        self.get_logger().info(f"object {object_name} at {t_vec}")
+        # self.get_logger().info(f"object {object_name} at {t_vec}")
         # 6. broadcast the TF of the object
         # Convert the transformation matrix to message and publish.
         new_msg = TransformStamped()
@@ -246,10 +342,6 @@ class ObjectTFPublisherNode(Node):
 
 
 def main(args: Optional[list[str]] = None) -> None:
-    # Ignore paddleocr debug warnings
-    logger = get_logger()
-    logger.setLevel(logging.ERROR)
-
     rclpy.init(args=args)
     object_tf_node = ObjectTFPublisherNode()
     rclpy.spin(object_tf_node)

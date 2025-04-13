@@ -181,5 +181,8 @@ AMENT_IGNORE
 # ROS bags
 rosbag*/
 
+# Images 
+*.png
+
 # VSCode
 .vscode/
