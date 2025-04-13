@@ -21,6 +21,7 @@ class DynamicMoveArm(Node):
         self.get_logger().info("Dynamic_move_arm node started!")
         self.bot = InterbotixManipulatorXS(
             robot_model="rx200",
+            # robot_model="wx250",
             group_name="arm",
             gripper_name="gripper",
         )
@@ -33,6 +34,7 @@ class DynamicMoveArm(Node):
             # the name of the keyboard key frame has to be whatever you define it as
             transform = self.tf_buffer.lookup_transform(
                 "rx200/base_link",
+                # "wx250/base_link",
                 "fake_key",
                 rclpy.time.Time(),
             )

@@ -33,6 +33,7 @@ class DynamicMoveArm(Node):
         self.get_logger().info("Dynamic_move_arm node started!")
         self.bot = InterbotixManipulatorXS(
             robot_model="rx200",
+            # robot_model="wx250",
             group_name="arm",
             gripper_name="gripper",
         )
@@ -49,6 +50,7 @@ class DynamicMoveArm(Node):
                 self.get_logger().info("looking up transform")
                 # the name of the keyboard key frame has to be whatever you define it as
                 transform = self.tf_buffer.lookup_transform(
+                    # "wx250/base_link",
                     "rx200/base_link",
                     existing_key_tf,
                     rclpy.time.Time(),
@@ -60,36 +62,51 @@ class DynamicMoveArm(Node):
                 if self.existing_key != char:
                     tf_diff = self.map_keyboard_keys(self.existing_key, char)
                     self.get_logger().info(
-                        f"this is the difference between {self.existing_key} and {char} : {tf_diff}")
-                self.get_logger().info("this is the transform from base to sensor frame")
+                        f"this is the difference between {self.existing_key} and {char} : {tf_diff}"
+                    )
+                self.get_logger().info(
+                    "this is the transform from base to sensor frame"
+                )
 
             except TransformException as e:
                 self.get_logger().error(e)
                 return
 
             # Extract roll, pitch, yaw from the transform's quaternion
-            rotation = Rotation.from_quat([
-                transform.transform.rotation.x,
-                transform.transform.rotation.y,
-                transform.transform.rotation.z,
-                transform.transform.rotation.w,
-            ])
-            roll, pitch, yaw = rotation.as_euler('xyz')
+            rotation = Rotation.from_quat(
+                [
+                    transform.transform.rotation.x,
+                    transform.transform.rotation.y,
+                    transform.transform.rotation.z,
+                    transform.transform.rotation.w,
+                ]
+            )
+
+            # roll, pitch, yaw = rotation.as_euler("yxz")
 
             deg_90 = math.radians(90)
+            roll = 0
+            pitch = deg_90
+            yaw = 0
             # Move to the target position
-            x = transform.transform.translation.x 
+            x = transform.transform.translation.x
             y = transform.transform.translation.y + tf_diff[0]
             z = transform.transform.translation.z + tf_diff[1] + self.stick_length
-            self.bot.arm.set_ee_pose_components(x=x, y=y, z=z, roll=roll, pitch=deg_90, yaw=yaw)
+            self.bot.arm.set_ee_pose_components(
+                x=x, y=y, z=z, roll=roll, pitch=pitch, yaw=yaw
+            )
 
             # Push the key
             z = transform.transform.translation.z + self.stick_length - self.push_dist
-            self.bot.arm.set_ee_pose_components(x=x, y=y, z=z, roll=roll, pitch=deg_90, yaw=yaw)
+            self.bot.arm.set_ee_pose_components(
+                x=x, y=y, z=z, roll=roll, pitch=deg_90, yaw=yaw
+            )
 
             # Return to the original position
             z = transform.transform.translation.x + self.stick_length
-            self.bot.arm.set_ee_pose_components(x=x, y=y, z=z, roll=roll, pitch=deg_90, yaw=yaw)
+            self.bot.arm.set_ee_pose_components(
+                x=x, y=y, z=z, roll=roll, pitch=deg_90, yaw=yaw
+            )
 
     def update_existing_key(self, msg):
         """Callback to update the existing key from the topic."""
@@ -115,7 +132,7 @@ class DynamicMoveArm(Node):
             "0": [0.1939, 0],
             "-": [0.2138, 0],
             "=": [0.2327, 0],
-            "delete": [0.2668, 0],
+            "backspace": [0.2668, 0],
             "tab": [0.0191, 0.02],
             "q": [0.029, 0.02],
             "w": [0.0494, 0.02],

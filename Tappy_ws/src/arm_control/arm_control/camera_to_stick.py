@@ -31,6 +31,7 @@ class Camera_Stick_broadcaster(Node):
         t = TransformStamped()
         t.header.stamp = self.get_clock().now().to_msg()
         t.header.frame_id = "rx200/fingers_link"
+        # t.header.frame_id = "wx250/fingers_link"
         t.child_frame_id = "stick_end"
         t.transform.translation.x = 0.13
         t.transform.translation.y = 0.0

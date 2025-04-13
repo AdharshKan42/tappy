@@ -27,19 +27,23 @@ class DynamicBroadcaster(Node):
         self.get_logger().info("Broadcasting pose of : {}".format(self.name_))
         tfs = TransformStamped()
         tfs.header.stamp = self.get_clock().now().to_msg()
+        # tfs.header.frame_id = "wx250/base_link"
         tfs.header.frame_id = "rx200/base_link"
         tfs._child_frame_id = self.name_
-        tfs.transform.translation.x = 0.20
-        tfs.transform.translation.y = 0.1
-        tfs.transform.translation.z = 0.03
+        tfs.transform.translation.x = float(0.0)
+        tfs.transform.translation.y = float(0.0)
+        tfs.transform.translation.z = float(0.0)
+
+        # tfs.transform.translation.x = float(0.20)
+        # tfs.transform.translation.y = float(0.1)
+        # tfs.transform.translation.z = float(0.03)
 
         # r = R.from_euler("xyz", [0, 0, msg.theta])
-        
-        quaternion = R.from_euler("xyz", [0, float(np.pi/2), 0]).as_quat()
 
+        quaternion = R.from_euler("yxz", [0, float(np.pi / 2), 0]).as_quat()
 
         tfs.transform.rotation.x = quaternion[0]
-        tfs.transform.rotation.y = quaternion[1]    
+        tfs.transform.rotation.y = quaternion[1]
         tfs.transform.rotation.z = quaternion[2]
         tfs.transform.rotation.w = quaternion[3]
 
