@@ -12,10 +12,8 @@ from tf2_ros import TransformException
 from tf2_ros.buffer import Buffer
 from tf2_ros.static_transform_broadcaster import StaticTransformBroadcaster
 from tf2_ros.transform_listener import TransformListener
-from paddleocr import PaddleOCR
 import cv2
 import logging
-from ppocr.utils.logging import get_logger
 import pdb
 from typing import List, Tuple, Union, Optional
 
@@ -73,9 +71,6 @@ class ObjectTFPublisherNode(Node):
 
         # internal model
         self.bridge = CvBridge()
-        # self.model = PaddleOCR(det=False, rec=True, cls=True, use_angle_cls=True, lang='en')
-        self.model = None
-        self.gemini_client = None
         self.init_gemini()
 
         self.conf_threshold = 0.6
@@ -139,8 +134,8 @@ class ObjectTFPublisherNode(Node):
         if self.latest_image_frame is None:
             return
 
-        if self.existing_key:
-            return
+        # if self.existing_key:
+        #     return
 
         # Convert ROS Image message to OpenCV image
         frame = self.bridge.imgmsg_to_cv2(self.latest_image_frame, desired_encoding="bgr8")
@@ -175,7 +170,7 @@ class ObjectTFPublisherNode(Node):
 
             # Filter based on size and shape, currently manually tuned (change to use dynamically 
             # change w,h params based on depth and homography info)
-            if 30 < w < 80 and 30 < h < 80 and 0.7 < aspect_ratio < 1.1:
+            if 30 < w < 100 and 30 < h < 100 and 0.7 < aspect_ratio < 1.2:
                 keyboard_keys.append((x, y, w, h))      
                 print(f"w: {w}, h:{h}, aspect_ratio: {aspect_ratio}")
 
@@ -254,7 +249,7 @@ class ObjectTFPublisherNode(Node):
         try:
             pil_image = im.fromarray(cv2.cvtColor(key_frame, cv2.COLOR_BGR2RGB))
 
-            prompt = "Analyze this image of a keyboard key and identify the character printed on it. This keyboard has the qwerty key layout and if it's a standard English alphabet key, just output the uppercase letter. If it's a number, output the number. If it is any other character, output unknown. Make sure the only outputs are in the format <key> or <number> or <unknown>"
+            prompt = "What letter is on this key of a QWERTY keyboard? Only output a character, unknown, or any of these keys: CTRL, ALT, TAB. Do not output any other text."
 
             response = self.client.models.generate_content(model="gemini-2.0-flash",
                                                            contents = [prompt, pil_image])
@@ -347,10 +342,6 @@ class ObjectTFPublisherNode(Node):
 
 
 def main(args: Optional[list[str]] = None) -> None:
-    # Ignore paddleocr debug warnings
-    logger = get_logger()
-    logger.setLevel(logging.ERROR)
-
     rclpy.init(args=args)
     object_tf_node = ObjectTFPublisherNode()
     rclpy.spin(object_tf_node)
