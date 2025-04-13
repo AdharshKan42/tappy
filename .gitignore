@@ -182,8 +182,4 @@ AMENT_IGNORE
 rosbag*/
 
 # VSCode
-<<<<<<< HEAD
 .vscode/
-=======
-.vscode/
->>>>>>> keyboard
