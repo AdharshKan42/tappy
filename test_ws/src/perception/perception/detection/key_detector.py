@@ -1,7 +1,4 @@
-import os
 from dataclasses import dataclass
-from typing import Optional
-
 import numpy as np
 import rclpy
 from ament_index_python.packages import get_package_share_directory
@@ -10,6 +7,7 @@ from geometry_msgs.msg import TransformStamped
 from rclpy.node import Node
 from scipy.spatial.transform import Rotation
 from sensor_msgs.msg import CameraInfo, Image
+from std_msgs.msg import String
 from tf2_ros import TransformException
 from tf2_ros.buffer import Buffer
 from tf2_ros.static_transform_broadcaster import StaticTransformBroadcaster
@@ -19,7 +17,13 @@ import cv2
 import logging
 from ppocr.utils.logging import get_logger
 import pdb
-from typing import List, Tuple, Union
+from typing import List, Tuple, Union, Optional
+
+from google import genai
+import os
+from PIL import Image as im
+import io
+import time
 
 @dataclass
 class Homography:
@@ -60,13 +64,19 @@ class ObjectTFPublisherNode(Node):
         # Annotated image publisher with detections
         self.image_publisher = self.create_publisher(Image, "perception/object_tf/image", 10)
 
+        self.existing_key_publisher = self.create_publisher(String, "perception/object_tf/existing_key", 10)
+
+        self.existing_key = False
         # Model-specific parameters
         package_dir = get_package_share_directory("perception")
         self.valid_keys = self._read_in_keys_dict(os.path.join(package_dir, "model/keys_dict.txt"))
 
         # internal model
         self.bridge = CvBridge()
-        self.model = PaddleOCR(det=False, rec=True, cls=True, use_angle_cls=True, lang='en')
+        # self.model = PaddleOCR(det=False, rec=True, cls=True, use_angle_cls=True, lang='en')
+        self.model = None
+        self.gemini_client = None
+        self.init_gemini()
 
         self.conf_threshold = 0.6
 
@@ -75,6 +85,8 @@ class ObjectTFPublisherNode(Node):
         self.tf_static_broadcaster = StaticTransformBroadcaster(self)
         self.tf_buffer = Buffer()
         self.tf_listener = TransformListener(self.tf_buffer, self)
+        self.counter = 0
+
 
         # Subscribe to realsense intrinsics to get the homography matrix
         self.create_subscription(
@@ -83,6 +95,16 @@ class ObjectTFPublisherNode(Node):
         self.homography: Homography | None = None
 
         self.get_logger().info(f"starting node")
+
+    def init_gemini(self):
+        # GOOGLE_API_KEY = os.environ.get("GOOGLE_API_KEY")
+        GOOGLE_API_KEY = "AIzaSyBPJrYi4j_2UL-i6V28ssXNokPV4WizUv4"  # Replace with your actual API key
+        if not GOOGLE_API_KEY:
+            raise ValueError("Please set the GOOGLE_API_KEY environment variable.")
+        
+        # Initialize the Gemini API
+        self.client = genai.Client(api_key=GOOGLE_API_KEY)
+
 
     def _read_in_keys_dict(self, path: str) -> None:
         """Reads in the keys dictionary from the given path and returns a list of keys."""
@@ -115,6 +137,9 @@ class ObjectTFPublisherNode(Node):
     def image_callback(self) -> None:
         """Processes the latest image frame at the set frequency."""
         if self.latest_image_frame is None:
+            return
+
+        if self.existing_key:
             return
 
         # Convert ROS Image message to OpenCV image
@@ -165,7 +190,7 @@ class ObjectTFPublisherNode(Node):
 
         # Draw contours on the image
         # Classify outlined keyboard keys
-        for i in range(min(len(keyboard_keys), 5)):
+        for i in range(min(len(keyboard_keys), 3)):
             x, y, w, h = keyboard_keys[i]
 
             # print(f"w: {w}, h:{h}, aspect_ratio: {aspect_ratio}")
@@ -173,22 +198,24 @@ class ObjectTFPublisherNode(Node):
 
         
             start_time = self.get_clock().now()
+            # cv2.imwrite(f"test_keys/key_{self.counter}.png", rgb_frame[y:y+h, x:x+w])
+            # self.counter += 1
+            # cv2.waitKey(1)
             result = self.classify_key(rgb_frame[y:y+h, x:x+w])
-            if result is None:
+            if result == "<unknown>" or result == "unknown":
+                self.get_logger().error(f"unknown detected")
                 continue
-        
 
-            self.get_logger().info(f"detected {result[0]} with confidence {result[1]}")
+            self.get_logger().info(f"detected {result}")
 
-            text: str = result[0]
-            confidence: float = result[1]
+            text: str = result
 
             x_min, y_min = int(x), int(y)
             x_max, y_max = int(x+w), int(y+h)
 
             # Draw bounding box
             cv2.rectangle(rgb_frame, (x_min, y_min), (x_max, y_max), (0, 255, 0), 2)
-            cv2.putText(rgb_frame, f"{text}, {confidence}", (x_min, y_min - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 0), 2)
+            cv2.putText(rgb_frame, f"{text}", (x_min, y_min - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 0), 2)
 
             # calculate robot pose 
             x1, y1, x2, y2 = x_min, y_min, x_max, y_max
@@ -212,30 +239,32 @@ class ObjectTFPublisherNode(Node):
             elapsed_time_seconds = elapsed_time.nanoseconds / 1e9
             self.get_logger().info(f"Elapsed time for {text}: {elapsed_time_seconds} seconds")
             
+            if result in self.valid_keys:
+                self.existing_key = True
+                msg = String()
+                msg.data = result
+                self.existing_key_publisher.publish(msg)
+                break
         # Publish the annotated image   
         annotated_frame_image = self.bridge.cv2_to_imgmsg(rgb_frame, encoding="rgb8")
         self.image_publisher.publish(annotated_frame_image)
 
     def classify_key(self, key_frame: np.ndarray) -> Union[str, None]:
-        """Classifies the given key frame using the PaddleOCR model."""
-        # Perform OCR on the key frame
-        result = self.model.ocr(key_frame, det=False, cls=True)
+        """Classifies the given key frame using Gemini."""
+        try:
+            pil_image = im.fromarray(cv2.cvtColor(key_frame, cv2.COLOR_BGR2RGB))
 
-        # Sort results by confidence, take the first one
-        result = sorted(result, key=lambda x: x[0][1], reverse=True)[0]
+            prompt = "Analyze this image of a keyboard key and identify the character printed on it. This keyboard has the qwerty key layout and if it's a standard English alphabet key, just output the uppercase letter. If it's a number, output the number. If it is any other character, output unknown. Make sure the only outputs are in the format <key> or <number> or <unknown>"
 
-        if result is None or len(result) == 0:
-            self.get_logger().error("No detection in result")
+            response = self.client.models.generate_content(model="gemini-2.0-flash",
+                                                           contents = [prompt, pil_image])
+
+            time.sleep(4.1)
+            return response.text.strip()
+
+        except Exception as e:
+            print(f"An error occurred during image analysis: {e}")
             return None
-
-        # Filter out results based on valid keys
-        result = [
-            (text, confidence)
-            for (text, confidence) in result
-            if text.upper() in self.valid_keys and confidence > self.conf_threshold
-        ]
-
-        return result[0] if result else None
 
     def publish_tf_global(
         self, parent_frame: str, object_pos: tuple[float, float, float], object_name: str
