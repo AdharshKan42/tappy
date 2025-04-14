@@ -16,8 +16,9 @@ class DynamicMoveArm(Node):
 
     def __init__(self):
         super().__init__("Dynamic_move_arm")
-        self.stick_length = 0.09398
-        self.push_dist = 0.005
+        fingers_to_ee_gripper = 0.027575
+        self.stick_length = 0.13 - fingers_to_ee_gripper
+        self.push_dist = 0.004 # 4mm key press travel
         self.tf_buffer = Buffer()
         self.tf_listener = TransformListener(self.tf_buffer, self)
 
@@ -53,23 +54,35 @@ class DynamicMoveArm(Node):
                     existing_key_tf,
                     rclpy.time.Time(),
                 )
-                self.get_logger().info(
-                    f"this is the transform from {existing_key_tf} to base link : {transform}"
-                )
+
+                # self.get_logger().info(
+                #     f"this is the transform from {existing_key_tf} to base link : {transform}"
+                # )
                 tf_diff = [0, 0]
                 if self.existing_key != char:
                     tf_diff = self.map_keyboard_keys(self.existing_key, char)
                     self.get_logger().info(
                         f"this is the difference between {self.existing_key} and {char} : {tf_diff}"
                     )
-                self.get_logger().info(
-                    "this is the transform from base to sensor frame"
-                )
+                # self.get_logger().info(
+                #     "this is the transform from base to sensor frame"
+                # )
 
-            except TransformException as e:
+            except Exception as e:
                 self.get_logger().error(e)
                 return
+            
+            # print("transform_x: ", transform.transform.translation.x)
+            # print("transform_y: ", transform.transform.translation.y)
+            # print("transform_z: ", transform.transform.translation.z)
 
+            # pdb.set_trace()
+
+            # tf_diff represents the difference in width and height coordinates between the two keys
+            # + width = -y in robot frame
+            # + height = -x in robot frame
+
+            mapping_width, mapping_height = tf_diff
             # Extract roll, pitch, yaw from the transform's quaternion
             rotation = Rotation.from_quat(
                 [
@@ -80,26 +93,44 @@ class DynamicMoveArm(Node):
                 ]
             )
             roll, pitch, yaw = rotation.as_euler("xyz")
+            # roll, yaw = 0, 0
 
             deg_90 = math.radians(90)
             # Move to the target position
-            x = transform.transform.translation.x
-            y = transform.transform.translation.y + tf_diff[0]
-            z = transform.transform.translation.z + tf_diff[1] + self.stick_length
+            # pdb.set_trace()
+
+            self.get_logger().info(
+                f"Moving to target position above key {self.existing_key.upper()}")
+            
+            x = transform.transform.translation.x + mapping_height
+            y = transform.transform.translation.y + mapping_width 
+            z = transform.transform.translation.z + self.stick_length + 0.02
             self.bot.arm.set_ee_pose_components(
-                x=x, y=y, z=z, roll=roll, pitch=deg_90, yaw=yaw
+                x=x, y=y, z=z, pitch=deg_90, 
             )
+
+            
+
+            # pdb.set_trace()
+
+            self.get_logger().info(
+                f"Pushing key {self.existing_key.upper()}")
 
             # Push the key
-            z = transform.transform.translation.z + self.stick_length - self.push_dist
+            z = transform.transform.translation.z + self.stick_length - self.push_dist 
             self.bot.arm.set_ee_pose_components(
-                x=x, y=y, z=z, roll=roll, pitch=deg_90, yaw=yaw
+                x=x, y=y, z=z, pitch=deg_90, 
             )
 
+
             # Return to the original position
-            z = transform.transform.translation.x + self.stick_length
+
+            self.get_logger().info(
+                f"returning to original target key {self.existing_key.upper()} position")
+            
+            z = transform.transform.translation.z  + self.stick_length + 0.02
             self.bot.arm.set_ee_pose_components(
-                x=x, y=y, z=z, roll=roll, pitch=deg_90, yaw=yaw
+                x=x, y=y, z=z, pitch=deg_90,
             )
 
     def update_existing_key(self, msg):
