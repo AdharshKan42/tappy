@@ -32,7 +32,7 @@ class Camera_Stick_broadcaster(Node):
         t.header.stamp = self.get_clock().now().to_msg()
         t.header.frame_id = "rx200/fingers_link"
         t.child_frame_id = "stick_end"
-        t.transform.translation.x = 0.09398
+        t.transform.translation.x = 0.13
         t.transform.translation.y = 0.0
         t.transform.translation.z = 0.0
         t.transform.rotation.x = quaternion[0]
@@ -45,7 +45,7 @@ class Camera_Stick_broadcaster(Node):
         tfs = TransformStamped()
         tfs.header.stamp = self.get_clock().now().to_msg()
         tfs.header.frame_id = "stick_end"
-        tfs.child_frame_id = "camera"
+        tfs.child_frame_id = "camera_link"
         tfs.transform.translation.x = -0.08128
         tfs.transform.translation.y = 0.01778
         tfs.transform.translation.z = 0.0381

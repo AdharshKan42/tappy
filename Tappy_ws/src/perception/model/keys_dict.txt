@@ -8,7 +8,6 @@ U
 I
 O
 P
-A
 S
 D
 G
@@ -23,3 +22,4 @@ V
 B
 N
 M
+LOGITECH

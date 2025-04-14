@@ -3,7 +3,7 @@ import numpy as np
 import rclpy
 from ament_index_python.packages import get_package_share_directory
 from cv_bridge import CvBridge
-from geometry_msgs.msg import TransformStamped
+from geometry_msgs.msg import TransformStamped, PoseArray
 from rclpy.node import Node
 from scipy.spatial.transform import Rotation
 from sensor_msgs.msg import CameraInfo, Image
@@ -62,6 +62,10 @@ class ObjectTFPublisherNode(Node):
 
         self.existing_key_publisher = self.create_publisher(String, "perception/object_tf/existing_key", 10)
 
+        self.aruco_listener = self.create_subscription(
+            PoseArray, "/aruco_poses", self.update_existing_key, 10
+        )
+
         self.existing_key = False
         # Model-specific parameters
         package_dir = get_package_share_directory("perception")
@@ -107,6 +111,17 @@ class ObjectTFPublisherNode(Node):
             # self.get_logger().info(f"read in keys dict: {lines}")
             return lines
 
+    def update_existing_key(self, msg: PoseArray) -> None:
+        """Updates the existing key based on the detected ArUco markers."""
+        if len(msg.poses) > 0:
+            self.existing_key = True
+            self.get_logger().info(f"existing key: {msg.poses[0].position.x}, {msg.poses[0].position.y}, {msg.poses[0].position.z}")
+            return
+
+        self.existing_key = False
+        self.get_logger().info("no existing key detected")
+
+
     def camera_info_callback(self, msg: CameraInfo) -> None:
         self.homography = Homography(fx=msg.k[0], fy=msg.k[4], cx=msg.k[2], cy=msg.k[5])
 
@@ -140,39 +155,62 @@ class ObjectTFPublisherNode(Node):
 
         rgb_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
         
-        # Convert BGR to Grayscale
+        # Convert BGR to hsv
+        hsv_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2HSV)
         gray_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
 
-        # Apply Gaussian blur
-        blurred = cv2.GaussianBlur(gray_frame, (5,5), 0)
 
-        # Perform edge detection
-        edges = cv2.Canny(blurred, 50, 150)
+        lower_tan = np.array([0, 0, 252])  
+        upper_tan = np.array([51, 17, 255]) 
 
-        # Apply dilation to close gaps in edges
-        kernel = np.ones((3,3), np.uint8)
-        dilated = cv2.dilate(edges, kernel, iterations=2)
+        mask = cv2.inRange(hsv_frame, lower_tan, upper_tan)
 
-        # Find contours
-        contours, _ = cv2.findContours(dilated, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
-        
+        # Find contours in the mask
+        contours, _ = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+
+        # Calculate dynamic bounds based on depth
+        if self.latest_depth_frame is not None and self.homography is not None:
+            avg_depth = np.nanmean(self.latest_depth_frame) / 1000.0  # Convert mm to meters
+            self.get_logger().info(f"Average depth: {avg_depth:.2f} m")
+            if not np.isnan(avg_depth) and avg_depth > 0:
+                pixel_width = (0.041 * self.homography.fx) / avg_depth
+                pixel_height = (0.02 * self.homography.fy) / avg_depth
+                self.get_logger().info(f"Dynamic bounds - Width: {pixel_width:.2f}, Height: {pixel_height:.2f}")
+            else:
+                self.get_logger().error("Invalid average depth. Using default bounds.")
+                pixel_width, pixel_height = 120, 60  # Default fallback values
+        else:
+            self.get_logger().error("No depth or homography info. Using default bounds.")
+            pixel_width, pixel_height = 120, 60  # Default fallback values
+
         # Filter contours based on size and shape
         keyboard_keys = []
+        counter = 0
         for cnt in contours:
+
+            epsilon = 0.02 * cv2.arcLength(cnt, True)
+            approx = cv2.approxPolyDP(cnt, epsilon, True)
             # print(cnt)
             # pdb.set_trace()
+            if 4 <= len(approx) <= 6:
+                # Top left corner of the bounding box
+                x, y, w, h = cv2.boundingRect(cnt)
+                aspect_ratio = w / float(h)
 
-            # Top left corner of the bounding box
-            x, y, w, h = cv2.boundingRect(cnt)
-            aspect_ratio = w / float(h)
+                # cv2.rectangle(rgb_frame, (x, y), (x + w, y + h), (0, 255, 0), 2)
 
-            # Filter based on size and shape, currently manually tuned (change to use dynamically 
-            # change w,h params based on depth and homography info)
-            if 30 < w < 100 and 30 < h < 100 and 0.7 < aspect_ratio < 1.2:
-                keyboard_keys.append((x, y, w, h))      
-                print(f"w: {w}, h:{h}, aspect_ratio: {aspect_ratio}")
-                cv2.rectangle(rgb_frame, (x, y), (x + w, y + h), (0, 255, 0), 2)
+                if (pixel_width * 0.8 < w < pixel_width * 1.2 and
+                        pixel_height * 0.8 < h < pixel_height * 1.2 and
+                        1.90 < aspect_ratio < 2.1):  
+                    keyboard_keys.append((x, y, w, h))
+                    cv2.rectangle(rgb_frame, (x, y), (x + w, y + h), (0, 255, 0), 2)
+                    cv2.putText(rgb_frame, f"counter {counter} w: {w}, h:{h}, aspect_ratio: {aspect_ratio}", (x, y - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 0), 2)
 
+
+                    counter +=1
+                    print(f"counter {counter} w: {w}, h:{h}, aspect_ratio: {aspect_ratio}")
+
+        print("**********************")
 
         # print(f"found {len(keyboard_keys)} keys")
         # Sort keyboard keys by w-coordinate from largest to smallest
@@ -181,65 +219,67 @@ class ObjectTFPublisherNode(Node):
 
         # pdb.set_trace()
 
-        # Draw contours on the image
         # Classify outlined keyboard keys
-        for i in range(min(len(keyboard_keys), 15)):
-            x, y, w, h = keyboard_keys[i]
+        # for i in range(min(len(keyboard_keys), 2)):
+        #     x, y, w, h = keyboard_keys[i]
 
-            # print(f"w: {w}, h:{h}, aspect_ratio: {aspect_ratio}")
-            # cv2.rectangle(rgb_frame, (x, y), (x + w, y + h), (0, 255, 0), 2)
+        #     # print(f"w: {w}, h:{h}, aspect_ratio: {aspect_ratio}")
+        #     # cv2.rectangle(rgb_frame, (x, y), (x + w, y + h), (0, 255, 0), 2)
 
         
-            start_time = self.get_clock().now()
-            # cv2.imwrite(f"test_keys/key_{self.counter}.png", rgb_frame[y:y+h, x:x+w])
-            # self.counter += 1
-            # cv2.waitKey(1)
-            result = self.classify_key(rgb_frame[y:y+h, x:x+w])
-            if result.lower() == "<unknown>" or result.lower() == "unknown":
-                self.get_logger().error(f"unknown detected")
-                continue
+        #     start_time = self.get_clock().now()
+        #     # cv2.imwrite(f"test_keys/key_{self.counter}.png", rgb_frame[y:y+h, x:x+w])
+        #     # self.counter += 1
+        #     # cv2.waitKey(1)
+        #     result = self.classify_key(rgb_frame[y:y+h, x:x+w])
+        #     if result.lower() == "false" or result.lower() == "unknown":
+        #         self.get_logger().error(f"Unknown key detected")
+        #         continue
 
-            self.get_logger().info(f"detected {result}")
+        #     if result.lower() == "true":
+        #         result = "logitech"
 
-            text: str = result
+        #     self.get_logger().info(f"detected {result}")
 
-            x_min, y_min = int(x), int(y)
-            x_max, y_max = int(x+w), int(y+h)
+        #     text: str = result
 
-            # Draw bounding box
-            cv2.rectangle(rgb_frame, (x_min, y_min), (x_max, y_max), (0, 255, 0), 2)
-            cv2.putText(rgb_frame, f"{text}", (x_min, y_min - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 0), 2)
+        #     x_min, y_min = int(x), int(y)
+        #     x_max, y_max = int(x+w), int(y+h)
 
-            # calculate robot pose 
-            x1, y1, x2, y2 = x_min, y_min, x_max, y_max
-            cx, cy = int((x1 + x2) // 2), int((y1 + y2) // 2)
+        #     # Draw bounding box
+        #     cv2.rectangle(rgb_frame, (x_min, y_min), (x_max, y_max), (0, 255, 0), 2)
+        #     cv2.putText(rgb_frame, f"{text}", (x_min, y_min - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 0), 2)
 
-            depth = self.calculate_depth(x1, y1, x2, y2)
-            if depth is None or np.isnan(depth):
-                self.get_logger().error(f"no depth for key at {x1, y1, x2, y2}")
-                continue
+        #     # calculate robot pose 
+        #     x1, y1, x2, y2 = x_min, y_min, x_max, y_max
+        #     cx, cy = int((x1 + x2) // 2), int((y1 + y2) // 2)
 
-            if self.homography is None:
-                self.get_logger().error("no homography info")
-                return
+        #     depth = self.calculate_depth(x1, y1, x2, y2)
+        #     if depth is None or np.isnan(depth):
+        #         self.get_logger().error(f"no depth for key at {x1, y1, x2, y2}")
+        #         continue
 
-            X, Y = self.homography.convert_camera(cx, cy, depth)
+        #     if self.homography is None:
+        #         self.get_logger().error("no homography info")
+        #         return
 
-            self.publish_tf_global(self.latest_image_frame.header.frame_id, (X, Y, depth), text)
+        #     X, Y = self.homography.convert_camera(cx, cy, depth)
 
-            end_time = self.get_clock().now()
-            elapsed_time = (end_time - start_time)
-            elapsed_time_seconds = elapsed_time.nanoseconds / 1e9
-            self.get_logger().info(f"Elapsed time for {text}: {elapsed_time_seconds} seconds")
+        #     self.publish_tf_global(self.latest_image_frame.header.frame_id, (X, Y, depth), text)
+
+        #     end_time = self.get_clock().now()
+        #     elapsed_time = (end_time - start_time)
+        #     elapsed_time_seconds = elapsed_time.nanoseconds / 1e9
+        #     self.get_logger().info(f"Elapsed time for {text}: {elapsed_time_seconds} seconds")
             
-            if result in self.valid_keys:
-                self.existing_key = True
-                msg = String()
-                msg.data = result
-                self.existing_key_publisher.publish(msg)
-                self.get_logger().info(f"existing key: {result}")
-                break
-        # Publish the annotated image   
+        #     if result in self.valid_keys:
+        #         self.existing_key = True
+        #         msg = String()
+        #         msg.data = result
+        #         self.existing_key_publisher.publish(msg)
+        #         self.get_logger().info(f"existing key: {result}")
+        #         break
+        # # Publish the annotated image   
         annotated_frame_image = self.bridge.cv2_to_imgmsg(rgb_frame, encoding="rgb8")
         self.image_publisher.publish(annotated_frame_image)
 
@@ -249,7 +289,7 @@ class ObjectTFPublisherNode(Node):
         try:
             pil_image = im.fromarray(cv2.cvtColor(key_frame, cv2.COLOR_BGR2RGB))
 
-            prompt = "What letter is on this key of a QWERTY keyboard? Only output a character, unknown, or any of these keys: CTRL, ALT, TAB. Do not output any other text."
+            prompt = "Does this image contain the logitech logo? Only respond with True or False, do not output any other text."
 
             response = self.client.models.generate_content(model="gemini-2.0-flash",
                                                            contents = [prompt, pil_image])
