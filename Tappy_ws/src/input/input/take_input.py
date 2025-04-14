@@ -42,6 +42,7 @@ class CollectInput(Node):
             if sentence.isalnum() or sentence.replace(" ", "").isalnum():
                 self.sentence_publisher.publish(String(data=sentence))
                 self.get_logger().info(f"Published sentence: {sentence}")
+                break
             else:
                 self.get_logger().warning("Invalid input. Please enter alphanumeric characters only.")
 

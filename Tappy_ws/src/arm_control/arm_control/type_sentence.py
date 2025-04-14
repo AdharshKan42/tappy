@@ -100,7 +100,7 @@ class DynamicMoveArm(Node):
             # pdb.set_trace()
 
             self.get_logger().info(
-                f"Moving to target position above key {self.existing_key.upper()}")
+                f"Moving to target position above key {char}")
             
             x = transform.transform.translation.x + mapping_height
             y = transform.transform.translation.y + mapping_width 
@@ -126,7 +126,7 @@ class DynamicMoveArm(Node):
             # Return to the original position
 
             self.get_logger().info(
-                f"returning to original target key {self.existing_key.upper()} position")
+                f"returning to original target key {char} position")
             
             z = transform.transform.translation.z  + self.stick_length + 0.02
             self.bot.arm.set_ee_pose_components(

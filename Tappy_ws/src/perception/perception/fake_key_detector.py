@@ -29,7 +29,7 @@ class DynamicBroadcaster(Node):
         tfs.header.stamp = self.get_clock().now().to_msg()
         tfs.header.frame_id = "rx200/base_link"
         tfs._child_frame_id = self.name_
-        tfs.transform.translation.x = 0.20
+        tfs.transform.translation.x = 0.25
         tfs.transform.translation.y = 0.1
         tfs.transform.translation.z = 0.03
 
