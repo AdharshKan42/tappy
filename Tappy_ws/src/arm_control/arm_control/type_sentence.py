@@ -46,29 +46,29 @@ class DynamicMoveArm(Node):
         # draw an exploratory rectangle
         # pdb.set_trace()
         self.bot.arm.set_ee_pose_components(
-                x=0.15, y=0.25, z=0.17, pitch=math.radians(90),
+                x=0.10, y=0.25, z=0.22, pitch=math.radians(90),
             )
         
         # pdb.set_trace()
         self.bot.arm.set_ee_pose_components(
-                x=0.25, y=0.2, z=0.17, pitch=math.radians(90),
+                x=0.20, y=0.2, z=0.22, pitch=math.radians(90),
             )
         
         self.bot.arm.set_ee_pose_components(
-                x=0.25, y=0.1, z=0.17, pitch=math.radians(90),
+                x=0.20, y=0.1, z=0.22, pitch=math.radians(90),
             )
         self.bot.arm.set_ee_pose_components(
-                x=0.25, y=0.0, z=0.17, pitch=math.radians(90),
+                x=0.20, y=0.0, z=0.22, pitch=math.radians(90),
             )
         self.bot.arm.set_ee_pose_components(
-                x=0.25, y=-0.1, z=0.17, pitch=math.radians(90),
+                x=0.20, y=-0.1, z=0.22, pitch=math.radians(90),
             )
         self.bot.arm.set_ee_pose_components(
-                x=0.25, y=-0.2, z=0.17, pitch=math.radians(90),
+                x=0.20, y=-0.2, z=0.22, pitch=math.radians(90),
             )
         
         self.bot.arm.set_ee_pose_components(
-                x=0.15, y=-0.25, z=0.17, pitch=math.radians(90),
+                x=0.10, y=-0.25, z=0.22, pitch=math.radians(90),
             )
 
     def type_character(self, msg):
@@ -114,7 +114,7 @@ class DynamicMoveArm(Node):
             
             x = transform.transform.translation.x + mapping_height
             y = transform.transform.translation.y + mapping_width 
-            z = transform.transform.translation.z + self.stick_length + 0.02
+            z = transform.transform.translation.z + self.stick_length + 0.08
             self.bot.arm.set_ee_pose_components(
                 x=x, y=y, z=z, pitch=deg_90, 
             )
@@ -127,7 +127,7 @@ class DynamicMoveArm(Node):
                 f"Pushing key {char}")
 
             # Push the key
-            z = transform.transform.translation.z + self.stick_length - self.push_dist 
+            z = transform.transform.translation.z + self.stick_length + 0.04
             self.bot.arm.set_ee_pose_components(
                 x=x, y=y, z=z, pitch=deg_90, 
             )
@@ -138,7 +138,7 @@ class DynamicMoveArm(Node):
             self.get_logger().info(
                 f"returning to original target key {char} position")
             
-            z = transform.transform.translation.z  + self.stick_length + 0.02
+            z = transform.transform.translation.z  + self.stick_length + 0.08
             self.bot.arm.set_ee_pose_components(
                 x=x, y=y, z=z, pitch=deg_90,
             )
