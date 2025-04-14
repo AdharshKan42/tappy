@@ -3,7 +3,7 @@ import numpy as np
 import rclpy
 from ament_index_python.packages import get_package_share_directory
 from cv_bridge import CvBridge
-from geometry_msgs.msg import TransformStamped
+from geometry_msgs.msg import TransformStamped, PoseArray
 from rclpy.node import Node
 from scipy.spatial.transform import Rotation
 from sensor_msgs.msg import CameraInfo, Image
@@ -62,6 +62,10 @@ class ObjectTFPublisherNode(Node):
 
         self.existing_key_publisher = self.create_publisher(String, "perception/object_tf/existing_key", 10)
 
+        self.aruco_listener = self.create_subscription(
+            PoseArray, "/aruco_poses", self.update_existing_key, 10
+        )
+
         self.existing_key = False
         # Model-specific parameters
         package_dir = get_package_share_directory("perception")
@@ -106,6 +110,17 @@ class ObjectTFPublisherNode(Node):
             lines = [line.strip() for line in lines]
             # self.get_logger().info(f"read in keys dict: {lines}")
             return lines
+
+    def update_existing_key(self, msg: PoseArray) -> None:
+        """Updates the existing key based on the detected ArUco markers."""
+        if len(msg.poses) > 0:
+            self.existing_key = True
+            self.get_logger().info(f"existing key: {msg.poses[0].position.x}, {msg.poses[0].position.y}, {msg.poses[0].position.z}")
+            return
+
+        self.existing_key = False
+        self.get_logger().info("no existing key detected")
+
 
     def camera_info_callback(self, msg: CameraInfo) -> None:
         self.homography = Homography(fx=msg.k[0], fy=msg.k[4], cx=msg.k[2], cy=msg.k[5])

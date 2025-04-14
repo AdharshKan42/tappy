@@ -1,0 +1,7 @@
+<launch>
+  <node pkg="perception" exec="aruco_detector" name="zed_aruco_detector">
+    <param name="image_topic" value="/camera/camera/color/image_raw"/>
+    <param name="camera_info_topic" value="/camera/camera/color/camera_info"/>
+    <param name="camera_frame" value="camera_color_optical_frame"/>
+  </node>
+</launch>

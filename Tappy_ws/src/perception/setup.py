@@ -15,6 +15,7 @@ setup(
             ['resource/' + package_name]),
         ('share/' + package_name, ['package.xml']),
         (os.path.join("share", package_name, "model"), glob("model/*.*")),
+        (os.path.join("share", package_name, "launch"), glob("launch/*")),
     ],
     install_requires=[
         'setuptools',
@@ -33,6 +34,7 @@ setup(
             f"key_detector = {object_detection_root}.key_detector_new:main",
             f"mock_baselink = {object_detection_root}.mock_baselink:main",
             f"fake_key_detector = {package_name}.fake_key_detector:main",
+            f"aruco_detector = {object_detection_root}.aruco_detector:main",
         ],
     },
 )

@@ -1,7 +1,7 @@
 import rclpy
 from rclpy.node import Node
 from tf2_ros import TransformException
-from geometry_msgs.msg import TransformStamped
+from geometry_msgs.msg import TransformStamped, PoseArray
 from tf2_ros.buffer import Buffer
 from tf2_ros.transform_listener import TransformListener
 import pdb
@@ -22,15 +22,6 @@ class DynamicMoveArm(Node):
         self.tf_buffer = Buffer()
         self.tf_listener = TransformListener(self.tf_buffer, self)
 
-        self.existing_key = ""
-
-        # self.timer = self.create_timer(1.0, self.on_timer)
-        self.create_subscription(String, "next_arm_instruction", self.type_character, 1)
-        self.create_subscription(
-            String, "perception/object_tf/existing_key", self.update_existing_key, 1
-        )
-
-        self.existing_key = "t"
         self.get_logger().info("Dynamic_move_arm node started!")
         self.bot = InterbotixManipulatorXS(
             robot_model="rx200",
@@ -39,38 +30,57 @@ class DynamicMoveArm(Node):
         )
         self.get_logger().info("startup!")
         robot_startup()
+
+        self.existing_key = None
+        self.timer_period = 0.5  # seconds
+        self.timer = self.create_timer(self.timer_period, self.update_existing_key)
+
+        self.search_algo()
+
+        # self.timer = self.create_timer(1.0, self.on_timer)
+        self.create_subscription(String, "next_arm_instruction", self.type_character, 1)
+        
+        
         # self.bot.arm.go_to_home_pose()
+    def search_algo(self):
+        # draw an exploratory rectangle
+        # pdb.set_trace()
+        self.bot.arm.set_ee_pose_components(
+                x=0.15, y=0.25, z=0.17, pitch=math.radians(90),
+            )
+        
+        # pdb.set_trace()
+        self.bot.arm.set_ee_pose_components(
+                x=0.25, y=0.2, z=0.17, pitch=math.radians(90),
+            )
+        
+        self.bot.arm.set_ee_pose_components(
+                x=0.25, y=0.1, z=0.17, pitch=math.radians(90),
+            )
+        self.bot.arm.set_ee_pose_components(
+                x=0.25, y=0.0, z=0.17, pitch=math.radians(90),
+            )
+        self.bot.arm.set_ee_pose_components(
+                x=0.25, y=-0.1, z=0.17, pitch=math.radians(90),
+            )
+        self.bot.arm.set_ee_pose_components(
+                x=0.25, y=-0.2, z=0.17, pitch=math.radians(90),
+            )
+        
+        self.bot.arm.set_ee_pose_components(
+                x=0.15, y=-0.25, z=0.17, pitch=math.radians(90),
+            )
 
     def type_character(self, msg):
-        print("im in tpakdslj;f")
-        if self.existing_key != "":
+        if self.existing_key_tf is not None:
+
             char = msg.data
-            existing_key_tf = "key_" + self.existing_key.upper()
-            try:
-                self.get_logger().info("looking up transform")
-                # the name of the keyboard key frame has to be whatever you define it as
-                transform = self.tf_buffer.lookup_transform(
-                    "rx200/base_link",
-                    existing_key_tf,
-                    rclpy.time.Time(),
-                )
+            transform = self.existing_key_tf
 
-                # self.get_logger().info(
-                #     f"this is the transform from {existing_key_tf} to base link : {transform}"
-                # )
-                tf_diff = [0, 0]
-                if self.existing_key != char:
-                    tf_diff = self.map_keyboard_keys(self.existing_key, char)
-                    self.get_logger().info(
-                        f"this is the difference between {self.existing_key} and {char} : {tf_diff}"
-                    )
-                # self.get_logger().info(
-                #     "this is the transform from base to sensor frame"
-                # )
-
-            except Exception as e:
-                self.get_logger().error(e)
-                return
+            tf_diff = self.map_keyboard_keys("aruco", char)
+            self.get_logger().info(
+                f"this is the difference between aruco and {char} : {tf_diff}"
+            )
             
             # print("transform_x: ", transform.transform.translation.x)
             # print("transform_y: ", transform.transform.translation.y)
@@ -114,7 +124,7 @@ class DynamicMoveArm(Node):
             # pdb.set_trace()
 
             self.get_logger().info(
-                f"Pushing key {self.existing_key.upper()}")
+                f"Pushing key {char}")
 
             # Push the key
             z = transform.transform.translation.z + self.stick_length - self.push_dist 
@@ -133,10 +143,22 @@ class DynamicMoveArm(Node):
                 x=x, y=y, z=z, pitch=deg_90,
             )
 
-    def update_existing_key(self, msg):
+    def update_existing_key(self):
         """Callback to update the existing key from the topic."""
-        self.existing_key = msg.data.lower()
-        self.get_logger().info(f"Updated existing key: {self.existing_key}")
+        try:
+            transform = self.tf_buffer.lookup_transform(
+                "rx200/base_link",
+                "aruco_id_4",
+                rclpy.time.Time(),
+            )
+            self.get_logger().info(f"aruco tag found!")
+
+            self.existing_key_tf = transform
+
+        except:
+            # self.get_logger().error(e)
+            return
+
 
     def transform_coordinates(self, key_1, key_2):
         y1, z1 = key_1
@@ -196,6 +218,7 @@ class DynamicMoveArm(Node):
             "/": [0.2184, 0.0583],
             "leftctrl": [0.0013, 0.078],
             "space": [0.1483, 0.078],
+            "aruco": [0.3718, -0.023]
         }
 
         key_one = key_dict[key1]
