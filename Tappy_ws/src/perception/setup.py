@@ -30,7 +30,7 @@ setup(
     tests_require=['pytest'],
     entry_points={
         'console_scripts': [
-            f"key_detector = {object_detection_root}.key_detector:main",
+            f"key_detector = {object_detection_root}.key_detector_new:main",
             f"mock_baselink = {object_detection_root}.mock_baselink:main",
             f"fake_key_detector = {package_name}.fake_key_detector:main",
         ],
