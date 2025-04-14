@@ -93,6 +93,8 @@ class DynamicMoveArm(Node):
             # + height = -x in robot frame
 
             mapping_width, mapping_height = tf_diff
+            mapping_width += (0.009899999999999992 + 0.005)
+            mapping_height += (0.019699999999999995 + 0.005)
             # Extract roll, pitch, yaw from the transform's quaternion
             rotation = Rotation.from_quat(
                 [
