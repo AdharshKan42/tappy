@@ -18,7 +18,7 @@ class DynamicMoveArm(Node):
         super().__init__("Dynamic_move_arm")
         fingers_to_ee_gripper = 0.027575
         self.stick_length = 0.13 - fingers_to_ee_gripper
-        self.push_dist = 0.004 # 4mm key press travel
+        self.push_dist = 0.00 # 4mm key press travel
         self.tf_buffer = Buffer()
         self.tf_listener = TransformListener(self.tf_buffer, self)
 
@@ -46,29 +46,33 @@ class DynamicMoveArm(Node):
         # draw an exploratory rectangle
         # pdb.set_trace()
         self.bot.arm.set_ee_pose_components(
-                x=0.15, y=0.25, z=0.17, pitch=math.radians(90),
+                x=0.10, y=0.25, z=0.22, pitch=math.radians(90),
             )
         
         # pdb.set_trace()
         self.bot.arm.set_ee_pose_components(
-                x=0.25, y=0.2, z=0.17, pitch=math.radians(90),
+                x=0.20, y=0.2, z=0.22, pitch=math.radians(90),
             )
         
         self.bot.arm.set_ee_pose_components(
-                x=0.25, y=0.1, z=0.17, pitch=math.radians(90),
+                x=0.20, y=0.1, z=0.22, pitch=math.radians(90),
             )
         self.bot.arm.set_ee_pose_components(
-                x=0.25, y=0.0, z=0.17, pitch=math.radians(90),
+                x=0.20, y=0.0, z=0.22, pitch=math.radians(90),
             )
         self.bot.arm.set_ee_pose_components(
-                x=0.25, y=-0.1, z=0.17, pitch=math.radians(90),
+                x=0.20, y=-0.1, z=0.22, pitch=math.radians(90),
             )
         self.bot.arm.set_ee_pose_components(
-                x=0.25, y=-0.2, z=0.17, pitch=math.radians(90),
+                x=0.20, y=-0.2, z=0.22, pitch=math.radians(90),
             )
         
         self.bot.arm.set_ee_pose_components(
-                x=0.15, y=-0.25, z=0.17, pitch=math.radians(90),
+                x=0.10, y=-0.25, z=0.22, pitch=math.radians(90),
+            )
+
+        self.bot.arm.set_ee_pose_components(
+                x=0.0, y=-0.0, z=0.4,
             )
 
     def type_character(self, msg):
@@ -93,6 +97,8 @@ class DynamicMoveArm(Node):
             # + height = -x in robot frame
 
             mapping_width, mapping_height = tf_diff
+            mapping_width += (0.009899999999999992 + 0.005)
+            mapping_height += (0.019699999999999995 + 0.005)
             # Extract roll, pitch, yaw from the transform's quaternion
             rotation = Rotation.from_quat(
                 [
@@ -114,7 +120,7 @@ class DynamicMoveArm(Node):
             
             x = transform.transform.translation.x + mapping_height
             y = transform.transform.translation.y + mapping_width 
-            z = transform.transform.translation.z + self.stick_length + 0.02
+            z = transform.transform.translation.z + self.stick_length + 0.04
             self.bot.arm.set_ee_pose_components(
                 x=x, y=y, z=z, pitch=deg_90, 
             )
@@ -127,7 +133,7 @@ class DynamicMoveArm(Node):
                 f"Pushing key {char}")
 
             # Push the key
-            z = transform.transform.translation.z + self.stick_length - self.push_dist 
+            z = transform.transform.translation.z + self.stick_length - self.push_dist
             self.bot.arm.set_ee_pose_components(
                 x=x, y=y, z=z, pitch=deg_90, 
             )
@@ -138,7 +144,7 @@ class DynamicMoveArm(Node):
             self.get_logger().info(
                 f"returning to original target key {char} position")
             
-            z = transform.transform.translation.z  + self.stick_length + 0.02
+            z = transform.transform.translation.z  + self.stick_length + 0.04
             self.bot.arm.set_ee_pose_components(
                 x=x, y=y, z=z, pitch=deg_90,
             )
@@ -166,59 +172,59 @@ class DynamicMoveArm(Node):
         return (y1 - y2, z1 - z2)
 
     def map_keyboard_keys(self, key1, key2):
+        offset = 0.01905
+        offset1 = 0.01905 + 0.003
         key_dict = {
-            "1": [0.0194, 0],
-            "2": [0.0386, 0],
-            "3": [0.0586, 0],
-            "4": [0.0775, 0],
-            "5": [0.098, 0],
-            "6": [0.117, 0],
-            "7": [0.1363, 0],
-            "8": [0.1559, 0],
-            "9": [0.1746, 0],
-            "0": [0.1939, 0],
-            "-": [0.2138, 0],
-            "=": [0.2327, 0],
-            "backspace": [0.2668, 0],
-            "tab": [0.0191, 0.02],
-            "q": [0.029, 0.02],
-            "w": [0.0494, 0.02],
-            "e": [0.068, 0.02],
-            "r": [0.088, 0.02],
-            "t": [0.1073, 0.02],
-            "y": [0.1269, 0.02],
-            "u": [0.1459, 0.02],
-            "i": [0.1646, 0.02],
-            "o": [0.1844, 0.02],
-            "p": [0.2029, 0.02],
-            "[": [0.2222, 0.02],
-            "]": [0.2428, 0.02],
-            "capslock": [0.0254, 0.02],
-            "a": [0.0345, 0.0386],
-            "s": [0.0526, 0.0386],
-            "d": [0.0724, 0.0386],
-            "f": [0.0922, 0.0386],
-            "g": [0.1153, 0.0386],
-            "h": [0.1311, 0.0386],
-            "j": [0.1507, 0.0386],
-            "k": [0.1694, 0.0386],
-            "l": [0.1889, 0.0386],
-            ";": [0.2079, 0.0386],
-            "enter": [0.1042, 0.0386],
-            "shift": [0.0158, 0.0583],
-            "z": [0.0414, 0.0583],
-            "x": [0.0622, 0.0583],
-            "c": [0.0816, 0.0583],
-            "v": [0.1021, 0.0583],
-            "b": [0.1215, 0.0583],
-            "n": [0.1407, 0.0583],
-            "m": [0.1601, 0.0583],
-            ",": [0.1799, 0.0583],
-            ".": [0.1978, 0.0583],
-            "/": [0.2184, 0.0583],
-            "leftctrl": [0.0013, 0.078],
-            "space": [0.1483, 0.078],
-            "aruco": [0.3718, -0.023]
+            "1": [offset * 1, 0],
+            "2": [offset * 2, 0],
+            "3": [offset * 3, 0],
+            "4": [offset * 4, 0],
+            "5": [offset * 5, 0],
+            "6": [offset * 6, 0],
+            "7": [offset * 7, 0],
+            "8": [offset * 8, 0],
+            "9": [offset * 9, 0],
+            "0": [offset * 10, 0],
+            "-": [offset * 11, 0],
+            "=": [offset * 12, 0],
+            "backspace": [0.257778, 0],
+            "tab": [0.00484, 0.01905],
+            "q": [0.02867, 0.01905],
+            "w": [0.02867 + offset * 1, 0.01905],
+            "e": [0.02867 + offset * 2, 0.01905],
+            "r": [0.02867 + offset * 3, 0.01905],
+            "t": [0.02867 + offset * 4, 0.01905],
+            "y": [0.02867 + offset * 5, 0.01905],
+            "u": [0.02867 + offset * 6, 0.01905],
+            "i": [0.02867 + offset * 7, 0.01905],
+            "o": [0.02867 + offset * 8, 0.01905],
+            "p": [0.02867 + offset * 9, 0.01905],
+            "[": [0.02867 + offset * 10, 0.01905],
+            "]": [0.02867 + offset * 11, 0.01905],
+            "capslock": [0.0077, 0.0381],
+            "a": [0.03404, 0.0381],
+            "s": [0.03404 + offset * 1, 0.0381],
+            "d": [0.03404 + offset * 2, 0.0381],
+            "f": [0.03404 + offset * 3, 0.0381],
+            "g": [0.03404 + offset * 4, 0.0381],
+            "h": [0.03404 + offset * 5, 0.0381],
+            "j": [0.03404 + offset * 6, 0.0381],
+            "k": [0.03404 + offset * 7, 0.0381],
+            "l": [0.03404 + offset * 8, 0.0381],
+            ";": [0.03404 + offset * 9, 0.0381],
+            "enter": [0.26504, 0.0381],
+            "z": [0.02376 + offset1, 0.0583],
+            "x": [0.02376 + offset1 * 1, 0.0583],
+            "c": [0.02376 + offset1 * 2, 0.0583],
+            "v": [0.02376 + offset1 * 3, 0.0583],
+            "b": [0.02376 + offset1 * 4, 0.0583],
+            "n": [0.02376 + offset1 * 5, 0.0583],
+            "m": [0.02376 + offset1 * 6, 0.0583],
+            ",": [0.02376 + offset1 * 7, 0.0583],
+            ".": [0.02376 + offset1 * 8, 0.0583],
+            "/": [0.02376 + offset1 * 9, 0.0583],
+            "space": [0.122, 0.0762],
+            "aruco": [0.3627, -0.032],
         }
 
         key_one = key_dict[key1]
