@@ -126,3 +126,23 @@ ros2 run perception key_detector
 ```
 rviz -d /path/to/your/key_detection_rviz.rviz
 ```
+
+# Running Tappy!
+
+In individual terminals, run these commands to start the Realsense and ArUco Detection:
+
+```
+ros2 launch realsense2_camera rs_launch.py enable_rgbd:=true enable_sync:=true align_depth.enable:=true enable_color:=true enable_depth:=true rgb_camera.color_profile:=1280x720x15 depth_module.depth_profile:=1280x720x15
+ros2 launch perception aruco_detection_launch.xml
+```
+
+Launch the commands below in individual terminals to allow the arm to type autonomously. Remember to remove the Realsense from the arm after finding a successful ArUco detection.
+
+```
+ros2 run keyboard_input keystroke_external
+ros2 launch interbotix_xsarm_control xsarm_control.launch.py robot_model:=rx200
+ros2 run arm_control camera_to_stick
+ros2 run arm_control type_arm
+ros2 run keyboard_input keystroke_validation
+ros2 run input input_collector
+```
